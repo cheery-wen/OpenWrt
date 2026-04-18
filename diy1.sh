@@ -61,7 +61,8 @@ clone_with_retry "https://github.com/Openwrt-Passwall/openwrt-passwall-packages.
 clone_with_retry "https://github.com/Openwrt-Passwall/openwrt-passwall.git" "package/luci-app-passwall"
 
 echo ">>> 添加 Autocore"
-clone_with_retry "https://github.com/immortalwrt/autocore.git" "package/autocore"
+# 原仓库已失效，替换为有效镜像
+clone_with_retry "https://github.com/1715173329/autocore.git" "package/autocore"
 
 echo ">>> 添加 USB 自动共享 (autosamba)"
 clone_with_retry "https://github.com/sbwml/autosamba.git" "package/autosamba"
