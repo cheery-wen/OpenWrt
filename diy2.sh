@@ -15,5 +15,10 @@ else
     echo "⚠️ 未找到 $LUCI_CONFIG，跳过语言设置"
 fi
 
+# ---------- 2. 禁用 geoview（避免 Go 版本兼容编译错误）----------
+if [ -f ".config" ]; then
+    sed -i 's/^CONFIG_PACKAGE_geoview=y$/# CONFIG_PACKAGE_geoview is not set/' .config
+    echo "✅ 已禁用 geoview"
+fi
 
 echo "✅ diy2.sh 执行完成"
