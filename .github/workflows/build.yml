@@ -1,20 +1,20 @@
-name: 编译 OpenWrt (最终优化版)
+name: 编译官方 OpenWrt (最终优化版)
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]            # 官方主分支为 main
   repository_dispatch:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: https://github.com/openwrt/openwrt   # 官方 OpenWrt 仓库
+  REPO_BRANCH: main                               # 官方主分支
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
   DIY1_SH: diy1.sh                 # 首次配置脚本（修改 feeds 源）
   DIY2_SH: diy2.sh                 # 二次配置脚本（修改 .config）
   TZ: Asia/Shanghai
-  OPENWRT_NAME: "lede"
+  OPENWRT_NAME: "openwrt"          # 项目名称改为 openwrt
   UPLOAD_RELEASE: true
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
@@ -65,8 +65,8 @@ jobs:
             autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
           df -h
 
-      # 5. 克隆 LEDE 源码
-      - name: 克隆 OpenWrt 源码
+      # 5. 克隆官方 OpenWrt 源码
+      - name: 克隆官方 OpenWrt 源码
         run: git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 
       # 6. 首次自定义配置：替换 feeds.conf.default 并执行 diy1.sh
