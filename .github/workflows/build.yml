@@ -2,23 +2,23 @@ name: 编译官方 OpenWrt (最终优化版)
 
 on:
   push:
-    branches: [ main ]            # 官方主分支为 main
+    branches: [ main ]
   repository_dispatch:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/openwrt/openwrt   # 官方 OpenWrt 仓库
-  REPO_BRANCH: main                               # 官方主分支
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: main
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
-  DIY1_SH: diy1.sh                 # 首次配置脚本（修改 feeds 源）
-  DIY2_SH: diy2.sh                 # 二次配置脚本（修改 .config）
+  DIY1_SH: diy1.sh
+  DIY2_SH: diy2.sh
   TZ: Asia/Shanghai
-  OPENWRT_NAME: "openwrt"          # 项目名称改为 openwrt
+  OPENWRT_NAME: "openwrt"
   UPLOAD_RELEASE: true
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # 强制使用 Node.js 24
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -28,7 +28,6 @@ jobs:
       contents: write
 
     steps:
-      # 1. 释放磁盘空间（删除无用工具）
       - name: 释放系统最大可用空间
         run: |
           sudo apt-get clean
@@ -40,11 +39,9 @@ jobs:
             /opt/google /var/lib/gems /opt/pipx /opt/amazon
           df -h
 
-      # 2. 检出本仓库（存放 .config、diy1.sh、diy2.sh 等）
       - name: 检出仓库代码
         uses: actions/checkout@v5
 
-      # 3. 设置时区与日期变量
       - name: 设置当前的日期
         run: |
           sudo timedatectl set-timezone "$TZ"
@@ -52,7 +49,6 @@ jobs:
           echo "date2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
           echo "date3=$(date '+%Y年%m月%d日')" >> $GITHUB_ENV
 
-      # 4. 安装编译依赖（Ubuntu 24.04 无 python2.7）
       - name: 安装编译依赖
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -65,25 +61,21 @@ jobs:
             autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
           df -h
 
-      # 5. 克隆官方 OpenWrt 源码
       - name: 克隆官方 OpenWrt 源码
         run: git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 
-      # 6. 首次自定义配置：替换 feeds.conf.default 并执行 diy1.sh
       - name: 首次自定义配置（处理 feeds.conf.default 并执行 diy1.sh）
         run: |
           cd openwrt
           [ -f "../$FEEDS_CONF" ] && cp "../$FEEDS_CONF" ./
           [ -f "../$DIY1_SH" ] && chmod +x "../$DIY1_SH" && "../$DIY1_SH"
 
-      # 7. 更新 feeds
       - name: 更新 feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 8. 缓存 dl、staging_dir、build_dir
       - name: 缓存 dl、staging_dir、build_dir
         uses: actions/cache@v5
         with:
@@ -94,7 +86,6 @@ jobs:
           key: openwrt-${{ github.ref }}-${{ github.run_id }}
           restore-keys: openwrt-${{ github.ref }}-
 
-      # 9. 再次加载自定义配置：复制 .config、执行 diy2.sh、生成默认配置
       - name: 再次加载自定义配置（复制 .config，执行 diy2.sh，make defconfig）
         run: |
           [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
@@ -102,7 +93,6 @@ jobs:
           [ -f "../$DIY2_SH" ] && chmod +x "../$DIY2_SH" && "../$DIY2_SH"
           make defconfig
 
-      # 10. 下载源码包（并行下载，失败后重试）
       - name: 下载源码包
         run: |
           cd openwrt
@@ -110,7 +100,6 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           make download -j8 || make download -j1 V=s
 
-      # 11. 编译固件（自动降级重试，提取设备名）
       - name: 编译固件
         id: compile
         run: |
@@ -121,12 +110,10 @@ jobs:
           grep '^CONFIG_TARGET_.*_DEVICE_.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
 
-      # 12. 检查磁盘使用情况（可选）
       - name: 检查磁盘使用情况
         if: (!cancelled())
         run: df -hT
 
-      # 13. 上传 bin 目录（按需）
       - name: 上传 bin 目录
         if: steps.compile.outcome == 'success' && env.UPLOAD_BIN_DIR == 'true'
         uses: actions/upload-artifact@v6
@@ -134,26 +121,27 @@ jobs:
           name: bin_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${{ env.date1 }}
           path: openwrt/bin
 
-      # 14. 整理固件到 firmware 目录（仅保留传统+EFI squashfs 固件，简化文件名）
-      - name: 整理固件文件
+      - name: 整理固件文件（简化文件名）
         id: organize
         if: steps.compile.outcome == 'success'
         run: |
           mkdir -p firmware
-          # 复制配置文件（作为记录）
           cp -v ./openwrt/.config firmware/${{ env.date1 }}_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}.config
           
-          # 查找所有 squashfs-combined 固件（包括传统和 EFI）
           find openwrt/bin/targets/*/*/ -maxdepth 1 -type f -name "*squashfs-combined*" | while read file; do
+            base=$(basename "$file")
             # 判断启动类型
-            if echo "$file" | grep -q "efi"; then
+            if echo "$base" | grep -q "efi"; then
               boot_type="efi"
             else
               boot_type="combined"
             fi
-            # 保留原始扩展名（如 .img, .img.gz）
-            ext="${file##*.}"
-            # 新文件名：日期_项目名_设备名_启动类型.扩展名
+            # 提取扩展名（处理 .img.gz 等）
+            if [[ "$base" == *.img.gz ]]; then
+              ext="img.gz"
+            else
+              ext="${base##*.}"
+            fi
             new_name="${{ env.date1 }}_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${boot_type}.${ext}"
             cp "$file" "firmware/$new_name"
           done
@@ -163,7 +151,6 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
           ls -lh
 
-      # 15. 上传固件到 Artifact
       - name: 上传固件到 Artifact
         if: steps.organize.outcome == 'success' && env.UPLOAD_FIRMWARE == 'true'
         uses: actions/upload-artifact@v6
@@ -171,7 +158,6 @@ jobs:
           name: firmware_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${{ env.date1 }}
           path: ${{ env.FIRMWARE }}
 
-      # 16. 生成 Release 正文（感谢语）
       - name: 生成发布标签和感谢语
         id: release
         if: steps.organize.outcome == 'success' && env.UPLOAD_RELEASE == 'true'
@@ -182,7 +168,6 @@ jobs:
           EOF
           echo "status=success" >> $GITHUB_OUTPUT
 
-      # 17. 创建正式 Release 并上传固件
       - name: 创建正式 Release 并上传固件
         if: steps.release.outcome == 'success'
         uses: softprops/action-gh-release@v2
@@ -196,7 +181,6 @@ jobs:
           draft: false
           prerelease: false
 
-      # 18. 编译后深度清理（释放空间）
       - name: 编译后深度清理
         if: always()
         run: |
