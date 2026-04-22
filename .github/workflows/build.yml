@@ -107,8 +107,13 @@ jobs:
           echo -e "$(nproc) thread compile"
           make -j$(nproc) || make -j1 || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
-          grep '^CONFIG_TARGET_.*_DEVICE_.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
+          
+          # 提取设备名，增加回退机制
+          DEVICE=$(grep '^CONFIG_TARGET_.*_DEVICE_.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' | head -1)
+          if [ -z "$DEVICE" ]; then
+            DEVICE="unknown"
+          fi
+          echo "DEVICE_NAME=$DEVICE" >> $GITHUB_ENV
 
       - name: 检查磁盘使用情况
         if: (!cancelled())
@@ -121,7 +126,7 @@ jobs:
           name: bin_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${{ env.date1 }}
           path: openwrt/bin
 
-      - name: 整理固件文件（简化文件名）
+      - name: 整理固件文件（简化文件名，包含设备名）
         id: organize
         if: steps.compile.outcome == 'success'
         run: |
@@ -130,13 +135,11 @@ jobs:
           
           find openwrt/bin/targets/*/*/ -maxdepth 1 -type f -name "*squashfs-combined*" | while read file; do
             base=$(basename "$file")
-            # 判断启动类型
             if echo "$base" | grep -q "efi"; then
               boot_type="efi"
             else
               boot_type="combined"
             fi
-            # 提取扩展名（处理 .img.gz 等）
             if [[ "$base" == *.img.gz ]]; then
               ext="img.gz"
             else
