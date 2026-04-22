@@ -16,8 +16,32 @@ if [ -f "package/base-files/files/etc/shadow" ]; then
 fi
 
 # ---------- 3. 自定义版本显示 ----------
-sed -i "s/DISTRIB_REVISION='.*'/DISTRIB_REVISION='($(TZ=UTC-8 date "+%Y.%m.%d") compiled by cheery)'/g" package/base-files/files/etc/openwrt_release
-echo "✅ 版本信息已更新（compiled by cheery）"
+#修改版本核心信息文件
+RELEASE_FILE="package/base-files/files/etc/openwrt_release"
+
+if [ -f "$RELEASE_FILE" ]; then
+    # 1.1 修改 DISTRIB_REVISION（影响 uname -a、opkg、ubus system board）
+    sed -i "s/DISTRIB_REVISION='.*'/DISTRIB_REVISION='($(TZ=UTC-8 date "+%Y.%m.%d") compiled by cheery)'/" "$RELEASE_FILE"
+
+    # 1.2 修改 DISTRIB_DESCRIPTION（影响 /etc/openwrt_release 及 LuCI 脚注）
+    sed -i "s/^DISTRIB_DESCRIPTION='OpenWrt /DISTRIB_DESCRIPTION='OpenWrt ($(TZ=UTC-8 date "+%Y.%m.%d") compiled by cheery) /" "$RELEASE_FILE"
+
+    echo "✅ 版本信息文件已更新（DISTRIB_REVISION + DISTRIB_DESCRIPTION）"
+else
+    echo "⚠️ 未找到 $RELEASE_FILE，请确认位于 OpenWrt 源码根目录"
+fi
+
+#修改登录欢迎界面 banner
+BANNER_FILE="package/base-files/files/etc/banner"
+
+if [ -f "$BANNER_FILE" ]; then
+    sed -i "s/OpenWrt /OpenWrt ($(TZ=UTC-8 date "+%Y.%m.%d") compiled by cheery) /" "$BANNER_FILE"
+    echo "✅ 登录 banner 已更新"
+else
+    echo "⚠️ 未找到 $BANNER_FILE，跳过 banner 修改"
+fi
+
+echo "🎉 所有自定义版本信息已完成（compiled by cheery）"
 
 # ---------- 4. 删除有依赖问题的软件包 ----------
 rm -rf feeds/packages/net/onionshare-cli 2>/dev/null || true
