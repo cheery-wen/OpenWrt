@@ -8,7 +8,7 @@ on:
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
-  REPO_BRANCH: main
+  REPO_BRANCH: openwrt-25.12
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
   DIY1_SH: diy1.sh
