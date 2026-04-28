@@ -93,6 +93,11 @@ jobs:
           [ -f "../$DIY2_SH" ] && chmod +x "../$DIY2_SH" && "../$DIY2_SH"
           make defconfig
 
+      # ========== 你要求新增的步骤已精准插入在这里 ==========
+      - name: 验证 luci 是否仍被选中
+        run: |
+          grep -E 'CONFIG_PACKAGE_luci[ =]' openwrt/.config || echo "⚠️ luci 被 defconfig 丢弃了！"
+
       - name: 下载源码包
         run: |
           cd openwrt
@@ -204,5 +209,4 @@ jobs:
       - name: 编译后深度清理
         if: always()
         run: |
-          rm -rf openwrt/build_dir openwrt/bin openwrt/staging_dir openwrt/tmp
-          df -h
+          rm -rf
