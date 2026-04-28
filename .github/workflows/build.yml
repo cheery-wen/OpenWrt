@@ -1,4 +1,4 @@
-name: 编译官方 OpenWrt (最终终极稳版)
+name: 编译官方 OpenWrt (最终版)
 
 on:
   workflow_dispatch:
@@ -61,21 +61,14 @@ jobs:
       - name: 克隆官方 OpenWrt 源码
         run: git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 
-# ==============================================
-# 【黄金固定顺序 100%不翻车】
-# 1.复制feeds模板 → 转为正式生效feeds.conf
-# 2.复制你的.config
-# 3.执行全部diy脚本
-# 4.make defconfig 锁定配置
-# 5.最后更新feeds、安装feeds
-# ==============================================
+
       - name: 核心初始化｜feeds生效 + 全部DIY + 锁定配置
         run: |
           cd openwrt
-          # 1.强制让 feeds.conf.default 正式生效（你之前最大的漏洞）
+          # 1.强制让 feeds.conf.default 正式生效
           cp -f ../feeds.conf.default feeds.conf
           
-          # 2.复制你的完整优化配置
+          # 2.复制配置
           cp -f ../.config .config
           
           # 3.执行两套DIY脚本
@@ -86,7 +79,7 @@ jobs:
           # 4.锁定配置，永不重置网卡与LuCI
           make defconfig
 
-      - name: 更新 & 安装 Feeds（最后执行！！）
+      - name: 更新 & 安装 Feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
