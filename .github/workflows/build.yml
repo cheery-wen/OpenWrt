@@ -22,7 +22,7 @@ jobs:
           sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl file bc patch mold python3 iproute2
           df -h
 
-      - name: 检出仓库文件
+      - name: 拉取仓库文件
         uses: actions/checkout@v5
 
       - name: 生成日期与运行编号
@@ -36,13 +36,14 @@ jobs:
       - name: 预创建DL缓存目录防报错
         run: mkdir -p openwrt/dl
 
-      - name: 【核心】预置LAN网桥+192.168.5.1+FW4防火墙放行
+      - name: 【标准路由】eth0=LAN网桥 eth1=WAN拨号
         run: |
           mkdir -p openwrt/files/etc/config
           cat > openwrt/files/etc/config/network << EOF
           config device 'br_lan'
                   option type 'bridge'
                   option autostart '1'
+
           config interface 'lan'
                   option device 'br-lan'
                   option proto 'static'
@@ -50,7 +51,14 @@ jobs:
                   option netmask '255.255.255.0'
                   option ip6assign '60'
                   list ports 'eth0'
-                  list ports 'eth1'
+
+          config interface 'wan'
+                  option device 'eth1'
+                  option proto 'dhcp'
+
+          config interface 'wan6'
+                  option device 'eth1'
+                  option proto 'dhcpv6'
           EOF
 
           cat > openwrt/files/etc/config/firewall << EOF
@@ -60,6 +68,14 @@ jobs:
                   option input 'accept'
                   option output 'accept'
                   option forward 'accept'
+
+          config zone
+                  option name 'wan'
+                  option network 'wan wan6'
+                  option input 'reject'
+                  option output 'accept'
+                  option forward 'reject'
+
           config forwarding
                   option src 'lan'
                   option dest 'wan'
@@ -122,9 +138,9 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.DATE1 }}-${{ env.RUN_NUM }}
-          name: OpenWrt25.12 终极稳定无BUG版
-          body: "编译时间：${{ env.DATE1 }}\n✅ LAN固定192.168.5.1｜网桥开机自启永不失效\n✅ FW4新版防火墙原生放行｜开机秒ping后台\n✅ 双网口ETH0/ETH1绑定LAN\n✅ Argon主题｜Passwall｜Lucky｜Samba4全正常\n✅ UEFI+Legacy双启动｜APK新版管理器无报错"
+          tag_name: ${{ env.DATE1 }}-${{ github.run_number }}
+          name: OpenWrt25.12 标准版 eth0-LAN eth1-WAN
+          body: "编译时间：${{ env.DATE1 }}\n✅ eth0=LAN内网 192.168.5.1\n✅ eth1=WAN宽带拨号\n✅ 网桥开机自启｜FW4防火墙安全规则\n✅ 开机秒ping后台、正常上网\n✅ Argon｜Passwall｜Lucky｜Samba4全兼容\n✅ UEFI+Legacy双启动"
           files: firmware/*
 
       - name: 清理临时文件
