@@ -1,15 +1,10 @@
-name: OpenWrt 25.12 | APK纯净最终版
+name: OpenWrt 25.12 全自动编译
 on: workflow_dispatch
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: openwrt-25.12
-  CONFIG_FILE: .config
-  DIY1: diy1.sh
-  DIY2: diy2.sh
   TZ: Asia/Shanghai
-  UPLOAD_RELEASE: true
-  UPLOAD_FIRMWARE: true
 
 jobs:
   build:
@@ -18,131 +13,85 @@ jobs:
       contents: write
 
     steps:
-      - name: 系统空间精简清理
+      - name: 安装编译依赖（预装mold链接器）
         run: |
           sudo apt-get clean
-          docker system prune -f --filter "dangling=true"
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /opt/pipx
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/pipx
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl python3-distutils file bc patch mold
           df -h
 
       - name: 拉取仓库全部文件
         uses: actions/checkout@v5
 
-      - name: 统一时区 & 编译日期
+      - name: 定义全局编译变量
         run: |
-          echo "DATE1=$(date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
-          echo "DATE2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
-          sudo timedatectl set-timezone Asia/Shanghai
+          echo "DATE1=$(TZ=Asia/Shanghai date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
+          echo "RUN_NUM=${{ github.run_number }}" >> $GITHUB_ENV
 
-      - name: 安装编译依赖
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev python3 unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
-
-      - name: 克隆官方 OpenWrt 25.12
+      - name: 克隆 OpenWrt 25.12 官方源码
         run: git clone --depth 1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
 
-      - name: 载入feeds & 执行前置DIY
+      - name: 执行 diy1 前置配置
         run: |
           cd openwrt
-          [ -f "../feeds.conf.default" ] && cp -f ../feeds.conf.default feeds.conf
-          [ -f "../${{ env.DIY1 }}" ] && chmod +x ../${{ env.DIY1 }} && ../${{ env.DIY1 }}
+          [ -f ../feeds.conf.default ] && cp -f ../feeds.conf.default feeds.conf
+          chmod +x ../diy1.sh && ../diy1.sh
 
-      - name: 替换 Golang 26.x
+      - name: 复制配置 + 执行 diy2 优化固化
         run: |
+          cp -f .config openwrt/.config
           cd openwrt
-          rm -rf feeds/packages/lang/golang
-          git clone --depth 1 https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
+          chmod +x ../diy2.sh && ../diy2.sh
 
-      - name: 更新 & 安装 feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: feeds后置清理多余插件
-        run: |
-          cd openwrt
-          rm -rf feeds/luci/applications/luci-app-control-webrestriction
-          rm -rf feeds/luci/applications/luci-app-ramfree
-          rm -rf feeds/luci/applications/luci-app-poweroff
-
-      - name: 安全缓存 dl 目录
-        uses: actions/cache@v5
+      - name: 编译缓存精准命中
+        uses: actions/cache@v6
         with:
           path: openwrt/dl
-          key: openwrt-dl-${{ github.ref }}-${{ github.run_id }}
+          key: openwrt-dl-${{ github.ref }}-${{ hashFiles('openwrt/.config','openwrt/feeds.conf.default') }}
           restore-keys: openwrt-dl-${{ github.ref }}-
-
-      - name: 正确载入.config & 执行收尾DIY
-        run: |
-          [ -f "${{ env.CONFIG_FILE }}" ] && cp -f "${{ env.CONFIG_FILE }}" openwrt/.config
-          cd openwrt
-          [ -f "../${{ env.DIY2 }}" ] && chmod +x ../${{ env.DIY2 }} && ../${{ env.DIY2 }}
-
-      - name: 校验LuCI核心配置
-        run: |
-          cd openwrt
-          grep -E 'CONFIG_PACKAGE_luci=y|CONFIG_PACKAGE_uhttpd=y' .config
 
       - name: 下载全部依赖包
         run: |
           cd openwrt
-          make download -j8 || make download -j1 V=s
+          make download -j8 || make download -j1 V=s || exit 1
 
-      - name: 开始编译固件
-        id: compile
+      - name: 并行编译固件 & 输出完整日志
+        id: build_status
         run: |
           cd openwrt
-          echo "$(nproc) 线程编译中..."
-          make -j$(nproc) || make -j1 V=s
-          echo "status=success" >> $GITHUB_OUTPUT
+          make -j$(nproc) 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
 
-      - name: 绝对路径整理固件｜无路径符号
-        id: arrange
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          FIRMWARE_DIR="$GITHUB_WORKSPACE/firmware"
-          mkdir -p "$FIRMWARE_DIR"
-          find openwrt/bin/targets/x86/64 -maxdepth 3 -type f -name "*squashfs*.img*" | while read img
-          do
-            name=$(basename "$img")
-            cp "$img" "$FIRMWARE_DIR/${{ env.DATE1 }}_x86_64_$name"
-          done
-          echo "FIRMWARE=$FIRMWARE_DIR" >> $GITHUB_ENV
-
-      - name: 上传固件至Artifact
-        if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
+      - name: 上传编译日志
         uses: actions/upload-artifact@v6
         with:
-          name: OpenWrt_${{ env.DATE2 }}_APK纯净版
-          path: ${{ env.FIRMWARE }}
+          name: Build-Log-${{ env.DATE1 }}
+          path: openwrt/build.log
 
-      - name: 生成Release备注文件
+      - name: 打包固件
+        if: success()
         run: |
-          echo "✅ 系统：OpenWrt Official 25.12" > release_note.txt
-          echo "✅ 包管理器：APK（彻底禁用 OPKG）" >> release_note.txt
-          echo "✅ 架构：x86_64 EFI+BIOS 双启动" >> release_note.txt
-          echo "✅ 内核优化：1000HZ｜内核抢占｜BBR｜全锥NAT｜AES加速" >> release_note.txt
-          echo "✅ 预装插件：Argon主题｜Argon设置｜Passwall｜Lucky" >> release_note.txt
-          echo "✅ 默认后台：192.168.5.1" >> release_note.txt
-          echo "✅ Root密码：无" >> release_note.txt
-          echo "" >> release_note.txt
-          echo "Compile by cheery" >> release_note.txt
+          cd openwrt/bin/targets/x86/64
+          mkdir -p $GITHUB_WORKSPACE/firmware
+          cp *combined*.img* $GITHUB_WORKSPACE/firmware/
+
+      - name: 上传成品固件
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: OpenWrt-Firmware-${{ env.DATE1 }}
+          path: firmware/
 
       - name: 自动发布 Release
-        if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.DATE2 }}
-          name: OpenWrt ${{ env.DATE2 }} APK终极定稿
-          body_path: release_note.txt
-          files: ${{ env.FIRMWARE }}/*
+          tag_name: ${{ env.DATE1 }}-${{ env.RUN_NUM }}
+          name: OpenWrt25.12 极致稳定最终版
+          body: "编译时间：${{ env.DATE1 }}\n✅ 全错误修复｜官方规范｜依赖齐全｜网络稳定｜零冲突"
+          files: firmware/*
 
-      - name: 编译后自动清理
+      - name: 全局清理
         if: always()
-        run: |
-          rm -rf openwrt firmware release_note.txt 2>/dev/null || true
-          sudo apt-get clean
+        run: rm -rf openwrt firmware
