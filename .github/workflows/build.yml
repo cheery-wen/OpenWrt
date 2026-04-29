@@ -13,12 +13,12 @@ jobs:
       contents: write
 
     steps:
-      - name: 清理环境并安装编译依赖
+      - name: 清理环境 & 安装兼容依赖（已移除报错python3-distutils）
         run: |
           sudo apt-get clean
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/pipx
           sudo apt-get -qq update
-          sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl python3-distutils file bc patch mold
+          sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl file bc patch mold python3
           df -h
 
       - name: 拉取仓库源码
@@ -45,7 +45,7 @@ jobs:
           chmod +x ../diy2.sh && ../diy2.sh
 
       - name: 开启编译缓存，提升编译速度
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: openwrt/dl
           key: openwrt-dl-${{ github.ref }}-${{ hashFiles('openwrt/.config','openwrt/feeds.conf.default') }}
