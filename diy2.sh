@@ -22,8 +22,6 @@ echo "CONFIG_USE_SSTRIP=n" >> .config
 sed -i '/^CONFIG_KERNEL_TRANSPARENT_HUGEPAGE/d' .config
 echo "CONFIG_KERNEL_TRANSPARENT_HUGEPAGE=n" >> .config
 
-# 【仅这一行修复，其余全原版不动】
-sed -i 's/^CONFIG_PACKAGE_shadowsocksr-libev=y/CONFIG_PACKAGE_shadowsocksr-libev=n/' .config
 
 make defconfig
 rm -rf tmp build_dir/tmp* 2>/dev/null
