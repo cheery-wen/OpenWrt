@@ -1,4 +1,4 @@
-name: OpenWrt 25.12 全自动编译
+name: OpenWrt 25.12 全自动无风险编译
 on: workflow_dispatch
 
 env:
@@ -13,7 +13,7 @@ jobs:
       contents: write
 
     steps:
-      - name: 安装编译依赖（预装mold链接器）
+      - name: 清理环境并安装编译依赖
         run: |
           sudo apt-get clean
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/pipx
@@ -21,55 +21,55 @@ jobs:
           sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl python3-distutils file bc patch mold
           df -h
 
-      - name: 拉取仓库全部文件
+      - name: 拉取仓库源码
         uses: actions/checkout@v5
 
-      - name: 定义全局编译变量
+      - name: 定义编译版本变量
         run: |
           echo "DATE1=$(TZ=Asia/Shanghai date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
           echo "RUN_NUM=${{ github.run_number }}" >> $GITHUB_ENV
 
-      - name: 克隆 OpenWrt 25.12 官方源码
+      - name: 克隆OpenWrt 25.12官方源码
         run: git clone --depth 1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
 
-      - name: 执行 diy1 前置配置
+      - name: 执行diy1前置配置与插件拉取
         run: |
           cd openwrt
           [ -f ../feeds.conf.default ] && cp -f ../feeds.conf.default feeds.conf
           chmod +x ../diy1.sh && ../diy1.sh
 
-      - name: 复制配置 + 执行 diy2 优化固化
+      - name: 复制编译配置并执行diy2优化
         run: |
           cp -f .config openwrt/.config
           cd openwrt
           chmod +x ../diy2.sh && ../diy2.sh
 
-      - name: 编译缓存精准命中
+      - name: 开启编译缓存，提升编译速度
         uses: actions/cache@v6
         with:
           path: openwrt/dl
           key: openwrt-dl-${{ github.ref }}-${{ hashFiles('openwrt/.config','openwrt/feeds.conf.default') }}
           restore-keys: openwrt-dl-${{ github.ref }}-
 
-      - name: 下载全部依赖包
+      - name: 下载所有编译依赖
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s || exit 1
 
-      - name: 并行编译固件 & 输出完整日志
+      - name: 全自动编译固件并输出日志
         id: build_status
         run: |
           cd openwrt
           make -j$(nproc) 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
-      - name: 上传编译日志
+      - name: 上传编译日志，便于问题排查
         uses: actions/upload-artifact@v6
         with:
           name: Build-Log-${{ env.DATE1 }}
           path: openwrt/build.log
 
-      - name: 打包固件
+      - name: 打包编译完成的固件
         if: success()
         run: |
           cd openwrt/bin/targets/x86/64
@@ -83,15 +83,15 @@ jobs:
           name: OpenWrt-Firmware-${{ env.DATE1 }}
           path: firmware/
 
-      - name: 自动发布 Release
+      - name: 自动创建Release发布固件
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.DATE1 }}-${{ env.RUN_NUM }}
-          name: OpenWrt25.12 极致稳定最终版
-          body: "编译时间：${{ env.DATE1 }}\n✅ 全错误修复｜官方规范｜依赖齐全｜网络稳定｜零冲突"
+          name: OpenWrt25.12 最终无风险稳定版
+          body: "编译时间：${{ env.DATE1 }}\n✅ 全部潜在风险修复｜Feeds预检｜Go完美适配｜Passwall零冲突｜全自动无交互"
           files: firmware/*
 
-      - name: 全局清理
+      - name: 编译完成后清理环境
         if: always()
         run: rm -rf openwrt firmware
