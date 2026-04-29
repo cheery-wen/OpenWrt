@@ -7,7 +7,7 @@ export TZ=Asia/Shanghai
 git config --global http.postBuffer 524288000
 git config --global core.compression 0
 
-# 原生3次重试克隆函数，无无效参数、全网稳定
+# 原生3次重试克隆函数，全网稳定不失败
 git_clone() {
     for i in {1..3}; do
         if git clone --depth 1 "$1" "$2"; then
@@ -36,7 +36,7 @@ build_date=$(TZ=Asia/Shanghai date +%Y.%m.%d)
 sed -i "s/DISTRIB_REVISION='.*'/DISTRIB_REVISION='($build_date compiled by cheery)'/" package/base-files/files/etc/openwrt_release
 sed -i "s/OpenWrt /OpenWrt ($build_date compiled by cheery) /" package/base-files/files/etc/banner
 
-# 拉取主题
+# 拉取Argon主题及配置
 git_clone https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
 git_clone https://github.com/jerrykuku/luci-app-argon-config package/luci-app-argon-config
 
