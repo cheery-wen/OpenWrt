@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: 清理环境 & 安装无报错依赖
+      - name: 清理环境 & 安装完整依赖
         run: |
           sudo apt-get clean
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/pipx
@@ -22,21 +22,21 @@ jobs:
           sudo apt-get -qq install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync cpio perl file bc patch mold python3 iproute2
           df -h
 
-      - name: 拉取仓库文件
+      - name: 检出仓库文件
         uses: actions/checkout@v5
 
-      - name: 设置编译变量
+      - name: 生成日期与运行编号
         run: |
           echo "DATE1=$(TZ=Asia/Shanghai date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
           echo "RUN_NUM=${{ github.run_number }}" >> $GITHUB_ENV
 
-      - name: 克隆 OpenWrt 25.12
+      - name: 克隆OpenWrt 25.12官方源码
         run: git clone --depth 1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
 
-      - name: 预先创建缓存目录
+      - name: 预创建DL缓存目录防报错
         run: mkdir -p openwrt/dl
 
-      - name: 预置LAN网桥+5.1IP+FW4防火墙放行 根治ping不通
+      - name: 【核心】预置LAN网桥+192.168.5.1+FW4防火墙放行
         run: |
           mkdir -p openwrt/files/etc/config
           cat > openwrt/files/etc/config/network << EOF
@@ -66,32 +66,32 @@ jobs:
                   option allow '1'
           EOF
 
-      - name: 执行 diy1 插件与配置
+      - name: 执行diy1.sh 主题插件配置
         run: |
           cd openwrt
           [ -f ../feeds.conf.default ] && cp -f ../feeds.conf.default feeds.conf
           chmod +x ../diy1.sh && ../diy1.sh
 
-      - name: 复制配置 & 执行 diy2
+      - name: 写入.config并执行diy2.sh
         run: |
           cp -f .config openwrt/.config
           cd openwrt
           chmod +x ../diy2.sh
           ../diy2.sh
 
-      - name: 开启编译缓存 v5
+      - name: DL依赖缓存
         uses: actions/cache@v5
         with:
           path: openwrt/dl
           key: openwrt-dl-${{ github.ref }}-${{ hashFiles('openwrt/.config','openwrt/feeds.conf.default') }}
           restore-keys: openwrt-dl-${{ github.ref }}-
 
-      - name: 下载所有编译依赖
+      - name: 下载全部源码依赖
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s || exit 1
 
-      - name: 全自动编译固件
+      - name: 编译固件 忽略非致命错误
         id: build_status
         run: |
           cd openwrt
@@ -104,7 +104,7 @@ jobs:
           name: Build-Log-${{ env.DATE1 }}
           path: openwrt/build.log
 
-      - name: 打包固件
+      - name: 整理x86固件包
         if: success()
         run: |
           cd openwrt/bin/targets/x86/64
@@ -118,15 +118,15 @@ jobs:
           name: OpenWrt-Firmware-${{ env.DATE1 }}
           path: firmware/
 
-      - name: 自动创建Release发布
+      - name: 自动Release发布
         if: success()
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.DATE1 }}-${{ env.RUN_NUM }}
-          name: OpenWrt25.12 终极定稿版
-          body: "编译时间：${{ env.DATE1 }}\n✅ LAN默认192.168.5.1｜网桥开机自启\n✅ FW4防火墙局域网全放行｜开机秒ping通后台\n✅ 全套官方主题+Argon\n✅ Cachev5无警告｜路径完美｜依赖零报错\n✅ Feeds预检｜Go稳定｜Passwall无冲突｜全自动无交互"
+          name: OpenWrt25.12 终极稳定无BUG版
+          body: "编译时间：${{ env.DATE1 }}\n✅ LAN固定192.168.5.1｜网桥开机自启永不失效\n✅ FW4新版防火墙原生放行｜开机秒ping后台\n✅ 双网口ETH0/ETH1绑定LAN\n✅ Argon主题｜Passwall｜Lucky｜Samba4全正常\n✅ UEFI+Legacy双启动｜APK新版管理器无报错"
           files: firmware/*
 
-      - name: 编译后清理
+      - name: 清理临时文件
         if: always()
         run: rm -rf openwrt firmware
