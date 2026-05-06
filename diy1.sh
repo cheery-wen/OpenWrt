@@ -1,42 +1,41 @@
 #!/bin/bash
 
-# ================= 网络修复 =================
-mkdir -p files/etc/uci-defaults
-
-cat > files/etc/uci-defaults/99-network <<'EOF'
 #!/bin/sh
 
-# LAN
+# 设置 LAN IP（可根据需要修改）
+LAN_IP="192.168.1.1"
+LAN_NETMASK="255.255.255.0"
+
+# 配置 LAN 接口
 uci set network.lan=interface
 uci set network.lan.proto='static'
-uci set network.lan.ipaddr='192.168.1.1'
-uci set network.lan.netmask='255.255.255.0'
+uci set network.lan.ipaddr="$LAN_IP"
+uci set network.lan.netmask="$LAN_NETMASK"
 uci set network.lan.device='br-lan'
 
-# bridge 所有网口
+# 创建网桥并自动添加所有存在的 eth 网口
 uci add network device
 uci set network.@device[-1].name='br-lan'
 uci set network.@device[-1].type='bridge'
-for i in eth0 eth1 eth2 eth3 eth4 eth5; do
-  uci add_list network.@device[-1].ports="$i"
+
+# 自动检测 eth* 接口
+for iface in $(ls /sys/class/net/ | grep -E '^eth[0-9]+'); do
+    uci add_list network.@device[-1].ports="$iface"
 done
 
-# DHCP
+# 配置 DHCP
 uci set dhcp.lan=dhcp
 uci set dhcp.lan.interface='lan'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
 
-# 防火墙
+# 防火墙全开放（可选）
 uci set firewall.@zone[0].input='ACCEPT'
 uci set firewall.@zone[0].forward='ACCEPT'
 uci set firewall.@zone[0].output='ACCEPT'
 
 uci commit
-EOF
-
-chmod +x files/etc/uci-defaults/99-network
-
+exit 0
 
 set -e
 set -o pipefail
