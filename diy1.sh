@@ -1,4 +1,43 @@
 #!/bin/bash
+
+# ================= 网络修复 =================
+mkdir -p files/etc/uci-defaults
+
+cat > files/etc/uci-defaults/99-network <<'EOF'
+#!/bin/sh
+
+# LAN
+uci set network.lan=interface
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='192.168.1.1'
+uci set network.lan.netmask='255.255.255.0'
+uci set network.lan.device='br-lan'
+
+# bridge 所有网口
+uci add network device
+uci set network.@device[-1].name='br-lan'
+uci set network.@device[-1].type='bridge'
+for i in eth0 eth1 eth2 eth3 eth4 eth5; do
+  uci add_list network.@device[-1].ports="$i"
+done
+
+# DHCP
+uci set dhcp.lan=dhcp
+uci set dhcp.lan.interface='lan'
+uci set dhcp.lan.start='100'
+uci set dhcp.lan.limit='150'
+
+# 防火墙
+uci set firewall.@zone[0].input='ACCEPT'
+uci set firewall.@zone[0].forward='ACCEPT'
+uci set firewall.@zone[0].output='ACCEPT'
+
+uci commit
+EOF
+
+chmod +x files/etc/uci-defaults/99-network
+
+
 set -e
 set -o pipefail
 export TZ=Asia/Shanghai
@@ -21,9 +60,6 @@ WORKDIR=$(pwd)
 OPENWRT_DIR="${WORKDIR}/openwrt"
 mkdir -p "${OPENWRT_DIR}"
 
-# 清空root密码
-sed -i '/^root:/d' package/base-files/files/etc/shadow
-echo "root::0:0:99999:7:::" >> package/base-files/files/etc/shadow
 
 # 固件版本信息
 build_date=$(TZ=Asia/Shanghai date +%Y.%m.%d)
