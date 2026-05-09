@@ -2,17 +2,14 @@
 set -e
 
 WORKDIR=$(pwd)
-OPENWRT_DIR="${WORKDIR}/openwrt"
+OPENWRT_DIR="${WORKDIR}"
 
 LAN_IP="192.168.1.1"
 LAN_NETMASK="255.255.255.0"
 
 build_date=$(TZ=Asia/Shanghai date +%Y.%m.%d)
 
-# ======================
 # 版本信息
-# ======================
-
 if [ -f package/base-files/files/etc/openwrt_release ]; then
     sed -i "s/DISTRIB_REVISION='.*'/DISTRIB_REVISION='(${build_date} compiled by cheery)'/" \
         package/base-files/files/etc/openwrt_release
@@ -23,47 +20,36 @@ if [ -f package/base-files/files/etc/banner ]; then
         package/base-files/files/etc/banner
 fi
 
-# ======================
-# Passwall feeds（官方推荐方式）
-# ======================
-
+# Passwall
 git clone --depth 1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages || true
 git clone --depth 1 https://github.com/Openwrt-Passwall/openwrt-passwall package/luci-app-passwall || true
 
-# ======================
-# Argon
-# ======================
+rm -rf feeds/luci/applications/luci-app-passwall 2>/dev/null || true
 
+# Argon
 git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon || true
 git clone --depth 1 https://github.com/jerrykuku/luci-app-argon-config package/luci-app-argon-config || true
 
-# ======================
 # Lucky
-# ======================
-
 git clone --depth 1 https://github.com/gdy666/lucky package/lucky || true
 git clone --depth 1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky || true
 
-# ======================
-# 网络修复（25.12核心）
-# ======================
-
 mkdir -p files/etc/uci-defaults
 
+# network
 cat > files/etc/uci-defaults/99-network-fix <<EOF
 #!/bin/sh
 
 LAN_IP="${LAN_IP}"
 LAN_NETMASK="${LAN_NETMASK}"
 
-# 修复 br-lan
 uci -q delete network.br_lan
+uci -q delete network.@device[0]
 
 uci set network.br_lan='device'
 uci set network.br_lan.name='br-lan'
 uci set network.br_lan.type='bridge'
 
-# 自动桥接所有物理网卡
 for dev in \$(ls /sys/class/net); do
     case "\$dev" in
         lo|br-*|docker*|veth*|tun*|tap*)
@@ -74,13 +60,11 @@ for dev in \$(ls /sys/class/net); do
     uci add_list network.br_lan.ports="\$dev"
 done
 
-# LAN
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr="\$LAN_IP"
 uci set network.lan.netmask="\$LAN_NETMASK"
 uci set network.lan.device='br-lan'
 
-# DHCP
 uci set dhcp.lan=dhcp
 uci set dhcp.lan.interface='lan'
 uci set dhcp.lan.start='100'
@@ -95,10 +79,7 @@ EOF
 
 chmod +x files/etc/uci-defaults/99-network-fix
 
-# ======================
-# 防火墙修复
-# ======================
-
+# firewall
 cat > files/etc/uci-defaults/99-firewall-fix <<'EOF'
 #!/bin/sh
 
@@ -112,7 +93,6 @@ for z in $(uci show firewall | grep "=zone" | cut -d. -f2 | cut -d= -f1); do
     }
 done
 
-# 防止重复
 uci -q delete firewall.allow_ping
 
 uci set firewall.allow_ping='rule'
@@ -128,17 +108,16 @@ EOF
 
 chmod +x files/etc/uci-defaults/99-firewall-fix
 
-# ======================
-# LuCI/uhttpd修复
-# ======================
-
+# uhttpd
 cat > files/etc/uci-defaults/99-uhttpd-fix <<'EOF'
 #!/bin/sh
 
-uci set uhttpd.main.listen_http='0.0.0.0:80'
+uci -q delete uhttpd.main.listen_http
+uci add_list uhttpd.main.listen_http='0.0.0.0:80'
 uci add_list uhttpd.main.listen_http='[::]:80'
 
-uci set uhttpd.main.listen_https='0.0.0.0:443'
+uci -q delete uhttpd.main.listen_https
+uci add_list uhttpd.main.listen_https='0.0.0.0:443'
 uci add_list uhttpd.main.listen_https='[::]:443'
 
 uci commit uhttpd
@@ -148,10 +127,7 @@ EOF
 
 chmod +x files/etc/uci-defaults/99-uhttpd-fix
 
-# ======================
 # 中文+时区
-# ======================
-
 cat > files/etc/uci-defaults/99-custom <<'EOF'
 #!/bin/sh
 
@@ -167,10 +143,6 @@ exit 0
 EOF
 
 chmod +x files/etc/uci-defaults/99-custom
-
-# ======================
-# 拷贝files
-# ======================
 
 cp -rf files "${OPENWRT_DIR}/" 2>/dev/null || true
 
