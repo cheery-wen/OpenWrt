@@ -3,9 +3,9 @@ set -e
 set -o pipefail
 
 # ========== 2. 清理 Go 模块缓存 ==========
-#echo "🗑️ 清理 Go 模块缓存..."
-#rm -rf dl/go-mod-cache 2>/dev/null || true
-#echo "✅ Go 缓存已清理"
+echo "🗑️ 清理 Go 模块缓存..."
+rm -rf dl/go-mod-cache 2>/dev/null || true
+echo "✅ Go 缓存已清理"
 
 # ========== 3. 替换官方 Golang 为 26.x 版本 ==========
 #rm -rf feeds/packages/lang/golang
