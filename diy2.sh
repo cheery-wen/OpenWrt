@@ -12,9 +12,9 @@ echo "✅ Go 缓存已清理"
 #git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
 #echo "✅ Golang 已更新至 26.x"
 
-#echo "==================== Feeds 完整性校验 ===================="
-#./scripts/feeds list -r
-#echo "==================== Feeds 校验完成 ===================="
+echo "==================== Feeds 完整性校验 ===================="
+./scripts/feeds list -r
+echo "==================== Feeds 校验完成 ===================="
 
 make defconfig
 
