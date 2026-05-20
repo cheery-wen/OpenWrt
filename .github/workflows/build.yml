@@ -14,7 +14,7 @@ env:
   DIY1_SH: diy1.sh
   DIY2_SH: diy2.sh
   TZ: Asia/Shanghai
-  OPENWRT_NAME: "ImmortalWrt"
+  OPENWRT_NAME: "openwrt"
   UPLOAD_RELEASE: true
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
