@@ -195,8 +195,4 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: 编译后深度清理
-        if: always()
-        run: |
-          rm -rf openwrt/build_dir openwrt/bin openwrt/staging_dir openwrt/tmp
-          df -h
+    
