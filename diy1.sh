@@ -22,6 +22,9 @@ git clone --depth 1 https://github.com/sirpdboy/luci-app-poweroffdevice.git pack
 # ghfu
 git clone --depth 1 https://github.com/smallprogram/luci-app-ghfu.git package/luci-app-ghfu
 
+# oaf
+git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/oaf
+
 echo "========================================="
 echo "DIY1 完成"
 echo "========================================="
