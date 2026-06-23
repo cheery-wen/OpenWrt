@@ -1,15 +1,14 @@
 #!/bin/bash
 set -e
 
-echo "🚀 开始注入 OpenWrt 25.12 优化补丁（版本增强版）"
+echo "🚀 开始注入 OpenWrt 25.12 优化补丁（最终稳定版）"
 
 # ==================================================
-# 0. 编译信息定义
+# 0. 编译信息
 # ==================================================
 COMPILE_DATE=$(TZ='Asia/Shanghai' date +%Y.%m.%d)
 BUILDER="cheery"
 
-# 获取 LuCI 版本信息（如果 feeds 存在）
 LUCISHORT=$(git -C feeds/luci rev-parse --short HEAD 2>/dev/null || echo unknown)
 LUCIBRANCH="openwrt-25.12"
 
@@ -48,17 +47,24 @@ EOF
 chmod +x "$BOARD_D_PATH/02_network"
 
 # ==================================================
-# 2. 默认 LAN IP
+# 2. 默认 LAN IP（稳定）
 # ==================================================
-echo "⚙️ 设置默认 IP: 192.168.5.1"
+echo "⚙️ 设置默认 IP 192.168.5.1"
 sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generate
 
 # ==================================================
-# 3. 强制时区 Asia/Shanghai
+# 3. ⭐ 稳定时区（完全避免 LuCI 报错）
 # ==================================================
-echo "🕒 设置时区 Asia/Shanghai"
-sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
-sed -i 's/zoneinfo\/UTC/zoneinfo\/Asia\/Shanghai/g' package/base-files/files/bin/config_generate
+echo "🕒 设置 Asia/Shanghai 时区（稳定方式）"
+
+mkdir -p package/base-files/files/etc/config
+
+cat > package/base-files/files/etc/config/system <<EOF
+config system
+    option hostname 'OpenWrt'
+    option timezone 'CST-8'
+    option zonename 'Asia/Shanghai'
+EOF
 
 # ==================================================
 # 4. board_detect 兜底
@@ -80,39 +86,44 @@ echo "🗑️ 清理 Go 缓存..."
 rm -rf dl/go-mod-cache 2>/dev/null || true
 
 # ==================================================
-# 6. Golang 替换（已开启）
+# 6. Golang 替换（26.x）
 # ==================================================
 echo "🔥 替换 Golang 26.x"
 rm -rf feeds/packages/lang/golang
 git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
 
 # ==================================================
-# 7. 🔥 关键：生成系统版本信息（banner + release）
+# 7. ⭐ 完整版本信息注入（LuCI + banner + os-release）
 # ==================================================
 
-echo "🧩 注入版本信息（OpenWrt + LuCI）"
+echo "🧩 注入完整版本信息（安全稳定版）"
 
-# 生成 banner（SSH登录显示）
+# banner（SSH）
 cat > package/base-files/files/etc/banner <<EOF
-OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER} / LuCI ${LUCIBRANCH} branch ${LUCISHORT}
+OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER}
+LuCI ${LUCIBRANCH} branch ${LUCISHORT}
 -----------------------------------------------------
 EOF
 
-# ==================================================
-# ⭐ 修正：用“写文件方式”替代 sed（更稳定）
-# ==================================================
-
-echo "🧩 生成 openwrt_release（稳定写入方式）"
-
+# LuCI system info
 cat > package/base-files/files/etc/openwrt_release <<EOF
 DISTRIB_ID='OpenWrt'
-DISTRIB_RELEASE='25.12-${COMPILE_DATE}'
+DISTRIB_RELEASE='25.12'
 DISTRIB_REVISION='SNAPSHOT'
-DISTRIB_TARGET='x86/64'
 DISTRIB_DESCRIPTION='OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER}'
+DISTRIB_TAINTS=''
+EOF
+
+# Web UI / 系统信息补充
+cat > package/base-files/files/usr/lib/os-release <<EOF
+PRETTY_NAME="OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER}"
+NAME="OpenWrt"
+VERSION="25.12"
+VERSION_ID="25.12"
+BUILD_ID="${LUCISHORT}"
 EOF
 
 # ==================================================
-# 8. 编译结束信息
+# 8. 完成
 # ==================================================
-echo "🚀 OpenWrt 25.12 优化补丁注入完成"
+echo "🚀 OpenWrt 25.12 优化补丁注入完成（最终稳定版）"
