@@ -98,9 +98,19 @@ OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER} / LuCI ${LUCIBRANCH} branch
 -----------------------------------------------------
 EOF
 
-# 修改系统版本描述（LuCI系统页面）
-sed -i "s/DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION='OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER}'/g" \
-package/base-files/files/etc/openwrt_release
+# ==================================================
+# ⭐ 修正：用“写文件方式”替代 sed（更稳定）
+# ==================================================
+
+echo "🧩 生成 openwrt_release（稳定写入方式）"
+
+cat > package/base-files/files/etc/openwrt_release <<EOF
+DISTRIB_ID='OpenWrt'
+DISTRIB_RELEASE='25.12-${COMPILE_DATE}'
+DISTRIB_REVISION='SNAPSHOT'
+DISTRIB_TARGET='x86/64'
+DISTRIB_DESCRIPTION='OpenWrt 25.12-${COMPILE_DATE} compiled by ${BUILDER}'
+EOF
 
 # ==================================================
 # 8. 编译结束信息
