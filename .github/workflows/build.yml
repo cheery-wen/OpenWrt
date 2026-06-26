@@ -9,6 +9,7 @@ on:
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: openwrt-25.12
+  REPO_TAG: v25.12.4
 
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
@@ -105,12 +106,24 @@ jobs:
 
           df -h
 
-      - name: 克隆 OpenWrt 源码
+      - name: 克隆 OpenWrt 稳定版源码
         run: |
-          git clone --depth 1 \
+          git clone \
+            --branch $REPO_BRANCH \
             $REPO_URL \
-            -b $REPO_BRANCH \
             openwrt
+
+          cd openwrt
+
+          git fetch --force --tags
+
+          git checkout --detach $REPO_TAG
+
+          echo "当前源码版本："
+          git describe --tags --always
+
+          echo "当前源码Commit："
+          git log -1 --oneline
 
       - name: 初始化缓存目录
         run: |
