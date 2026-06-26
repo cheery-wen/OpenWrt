@@ -1,16 +1,16 @@
-name: 编译 OpenWrt 25.12 系列(滚动分支/固定Tag双模式自动适配)
+name: 编译 OpenWrt 25.12 系列(滚动/稳定Tag自动适配)
 
 on:
   push:
     branches: [ master ]
   repository_dispatch:
+  # 手动触发开关，必须保留
   workflow_dispatch:
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
-  # 滚动分支，tag留空时启用
   REPO_BRANCH: openwrt-25.12
-  # 固定稳定tag，有值则优先使用；如需编译滚动分支改为空字符串 ""
+  # 稳定标签，需要编译滚动分支时改为 ""
   REPO_TAG: v25.12.4
 
   CONFIG_FILE: .config
@@ -19,9 +19,6 @@ env:
   DIY2_SH: diy2.sh
 
   TZ: Asia/Shanghai
-
-  # 固件名称自动区分稳定版/滚动版
-  OPENWRT_NAME: ${{ env.REPO_TAG != '' && format('OpenWrt-{0}-Stable', env.REPO_TAG) || format('OpenWrt-{0}-Snapshot', env.REPO_BRANCH) }}
 
   UPLOAD_RELEASE: true
   UPLOAD_BIN_DIR: false
@@ -34,7 +31,6 @@ jobs:
   build:
     name: 编译任务
     runs-on: ubuntu-24.04
-
     permissions:
       contents: write
 
@@ -70,12 +66,20 @@ jobs:
       - name: 检出仓库代码
         uses: actions/checkout@v5
 
-      - name: 设置当前日期
+      - name: 初始化全局变量（区分稳定版/滚动分支）
         run: |
           sudo timedatectl set-timezone "$TZ"
           echo "date1=$(date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
           echo "date2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
           echo "date3=$(date '+%Y年%m月%d日')" >> $GITHUB_ENV
+
+          if [ -n "$REPO_TAG" ]; then
+            echo "CACHE_KEY=$REPO_TAG" >> $GITHUB_ENV
+            echo "OPENWRT_NAME=OpenWrt-${REPO_TAG}-Stable" >> $GITHUB_ENV
+          else
+            echo "CACHE_KEY=$REPO_BRANCH" >> $GITHUB_ENV
+            echo "OPENWRT_NAME=OpenWrt-${REPO_BRANCH}-Snapshot" >> $GITHUB_ENV
+          fi
 
       - name: 安装编译依赖
         env:
@@ -105,13 +109,11 @@ jobs:
       - name: 克隆OpenWrt源码（自动判断Tag/分支）
         run: |
           if [ -n "$REPO_TAG" ]; then
-            # 存在Tag，编译固定稳定版
             git clone --depth 1 -b $REPO_TAG $REPO_URL openwrt
             cd openwrt
             git checkout tags/$REPO_TAG -b release-$REPO_TAG
             echo "=== 当前编译固定稳定Tag: $REPO_TAG ==="
           else
-            # Tag为空，编译滚动分支
             git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
             cd openwrt
             echo "=== 当前编译滚动分支: $REPO_BRANCH ==="
@@ -124,7 +126,6 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/.ccache
           ccache -M 2G
           ccache -o compression=true
-          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache"
 
       - name: 首次自定义配置 diy1.sh
         run: |
@@ -139,7 +140,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: openwrt/dl
-          key: dl-${{ runner.os }}-${{ env.REPO_TAG != '' ? env.REPO_TAG : env.REPO_BRANCH }}
+          key: dl-${{ runner.os }}-${{ env.CACHE_KEY }}
           restore-keys: |
             dl-${{ runner.os }}-
 
@@ -147,7 +148,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.os }}-${{ env.REPO_TAG != '' ? env.REPO_TAG : env.REPO_BRANCH }}
+          key: ccache-${{ runner.os }}-${{ env.CACHE_KEY }}
           restore-keys: |
             ccache-${{ runner.os }}-
 
