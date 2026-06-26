@@ -4,13 +4,12 @@ on:
   push:
     branches: [ master ]
   repository_dispatch:
-  # 手动触发开关，必须保留
   workflow_dispatch:
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: openwrt-25.12
-  # 稳定标签，需要编译滚动分支时改为 ""
+  # 编译稳定版填 v25.12.4；编译滚动分支填 ""
   REPO_TAG: v25.12.4
 
   CONFIG_FILE: .config
@@ -106,18 +105,22 @@ jobs:
             unzip upx wget xmlto xxd zlib1g-dev
           df -h
 
-      - name: 克隆OpenWrt源码（自动判断Tag/分支）
+      - name: 克隆OpenWrt源码（修复Annotated Tag警告）
         run: |
+          # 先克隆基础分支，避免直接clone tag产生警告
+          git clone --depth 10 -b $REPO_BRANCH $REPO_URL openwrt
+          cd openwrt
+          # 拉取指定Tag
+          git fetch origin tag $REPO_TAG
           if [ -n "$REPO_TAG" ]; then
-            git clone --depth 1 -b $REPO_TAG $REPO_URL openwrt
-            cd openwrt
-            git checkout tags/$REPO_TAG -b release-$REPO_TAG
+            # -B 存在则覆盖，不存在新建分支
+            git checkout tags/$REPO_TAG -B release-$REPO_TAG
             echo "=== 当前编译固定稳定Tag: $REPO_TAG ==="
           else
-            git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
-            cd openwrt
+            git checkout $REPO_BRANCH
             echo "=== 当前编译滚动分支: $REPO_BRANCH ==="
           fi
+          echo "==== OpenWrt 版本信息 ===="
           cat include/version.mk
 
       - name: 初始化缓存目录
