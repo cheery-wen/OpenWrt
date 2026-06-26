@@ -1,456 +1,256 @@
-name: OpenWrt 编译工业稳定CI流水线
+name: 编译 OpenWrt 25.12 系列(滚动分支/固定Tag双模式自动适配)
+
 on:
   push:
     branches: [ master ]
   repository_dispatch:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 编译类型 stable稳定版 / snapshot快照版
-        required: true
-        default: stable
-        type: choice
-        options:
-          - stable
-          - snapshot
 
 env:
-  CACHE_VER: v1
   REPO_URL: https://github.com/openwrt/openwrt
+  # 滚动分支，tag留空时启用
   REPO_BRANCH: openwrt-25.12
+  # 固定稳定tag，有值则优先使用；如需编译滚动分支改为空字符串 ""
   REPO_TAG: v25.12.4
+
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
   DIY1_SH: diy1.sh
   DIY2_SH: diy2.sh
+
   TZ: Asia/Shanghai
-  CCACHE_DIR: ${{ github.workspace }}/.ccache
-  CCACHE_BASEDIR: ${{ github.workspace }}/openwrt
-  CCACHE_EXEC: ccache
-  CCACHE_NLEVELS: 2
-  FIRMWARE: ${{ github.workspace }}/firmware
-  UPLOAD_ARTIFACT: true
+
+  # 固件名称自动区分稳定版/滚动版
+  OPENWRT_NAME: ${{ env.REPO_TAG != '' && format('OpenWrt-{0}-Stable', env.REPO_TAG) || format('OpenWrt-{0}-Snapshot', env.REPO_BRANCH) }}
+
   UPLOAD_RELEASE: true
-  OPENWRT_NAME: OpenWrt
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 2G
 
 jobs:
   build:
-    name: OpenWrt 源码编译任务
+    name: 编译任务
     runs-on: ubuntu-24.04
+
     permissions:
       contents: write
 
     steps:
-      - name: 检出当前仓库代码
+      - name: 释放系统最大可用空间
+        run: |
+          sudo apt-get clean
+          docker system prune -af || true
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/local/lib/android \
+            /usr/local/lib/node_modules \
+            /opt/hostedtoolcache \
+            /usr/local/.ghcup \
+            /usr/local/.cargo \
+            /usr/local/lib/python3.* \
+            /usr/local/aws-sam-cli \
+            /usr/local/aws-cli \
+            /usr/local/julia* \
+            /usr/share/swift \
+            /usr/share/miniconda \
+            /usr/share/az* \
+            /usr/share/kotlinc \
+            /opt/microsoft \
+            /opt/google \
+            /var/lib/gems \
+            /opt/pipx \
+            /opt/amazon || true
+          df -h
+
+      - name: 检出仓库代码
         uses: actions/checkout@v5
 
-      - name: 全局环境变量初始化
+      - name: 设置当前日期
         run: |
           sudo timedatectl set-timezone "$TZ"
-          echo "BUILD_DATE=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
-          echo "date1=$(date +'%Y.%m.%d-%H:%M:%S')" >> $GITHUB_ENV
+          echo "date1=$(date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
+          echo "date2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
           echo "date3=$(date '+%Y年%m月%d日')" >> $GITHUB_ENV
-          echo "CURR_BUILD_TYPE=${{ github.event.inputs.build_type || 'stable' }}" >> $GITHUB_ENV
-          # ccache全局参数注入
-          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
-          echo "CCACHE_BASEDIR=${{ env.CCACHE_BASEDIR }}" >> $GITHUB_ENV
-          echo "CCACHE_EXEC=${{ env.CCACHE_EXEC }}" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=5G" >> $GITHUB_ENV
-          echo "CCACHE_NLEVELS=${{ env.CCACHE_NLEVELS }}" >> $GITHUB_ENV
-          echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_ctime,include_file_mtime,file_stat_matches,locale,clang_index_store" >> $GITHUB_ENV
-          echo "CCACHE_DEPEND=true" >> $GITHUB_ENV
-          echo "CCACHE_NOCPP2=false" >> $GITHUB_ENV
-          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "CCACHE_CPP2=1" >> $GITHUB_ENV
 
-      - name: 安装全套系统编译依赖
+      - name: 安装编译依赖
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get install -y --no-install-recommends stdbuf ccache \
-            ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-            bzip2 cmake cpio curl device-tree-compiler flex gawk git gperf intltool \
-            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev \
-            libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
-            libssl-dev libtool lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 \
-            python3-pyelftools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+          sudo -E apt-get -qq install \
+            ack antlr3 asciidoc autoconf automake autopoint \
+            binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler \
+            flex gawk gettext gcc-multilib g++-multilib \
+            git git-core gperf haveged help2man intltool \
+            libc6-dev-i386 libelf-dev libfuse-dev \
+            libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev \
+            libncurses5-dev libncursesw5-dev \
+            libpython3-dev libreadline-dev \
+            libssl-dev libtool \
+            lrzsz msmtp ninja-build \
+            p7zip p7zip-full patch pkgconf \
+            python3 python3-pyelftools python3-setuptools \
+            qemu-utils rsync scons squashfs-tools \
+            subversion swig texinfo uglifyjs \
             unzip upx wget xmlto xxd zlib1g-dev
+          df -h
 
-      - name: 全局启用ccache + 官方标准参数 hash_dir=false
+      - name: 克隆OpenWrt源码（自动判断Tag/分支）
         run: |
-          echo "/usr/lib/ccache" >> $GITHUB_PATH
-          export PATH="/usr/lib/ccache:$PATH"
-          echo "==== 当前有效PATH ===="
-          echo "$PATH"
-          echo "==== 编译器实际路径 ===="
-          which gcc
-          which g++
-          gcc -v
-          ccache -s
-          ccache -o hash_dir=false
-          ccache -o cache_dir_levels=${{ env.CCACHE_NLEVELS }}
-          gcc --version
-          g++ --version
-          ccache --version
-          make -v
-
-      - name: 拉取 OpenWrt 官方源码仓库（统一使用Shell变量）
-        run: |
-          cd ${{ github.workspace }}
-          BT="$CURR_BUILD_TYPE"
-          if [[ "${BT}" == "snapshot" ]]; then
-            git clone --depth=50 --single-branch --branch "$REPO_BRANCH" "$REPO_URL" openwrt
+          if [ -n "$REPO_TAG" ]; then
+            # 存在Tag，编译固定稳定版
+            git clone --depth 1 -b $REPO_TAG $REPO_URL openwrt
+            cd openwrt
+            git checkout tags/$REPO_TAG -b release-$REPO_TAG
+            echo "=== 当前编译固定稳定Tag: $REPO_TAG ==="
           else
-            git clone --depth=1 --single-branch --branch "$REPO_TAG" "$REPO_URL" openwrt
+            # Tag为空，编译滚动分支
+            git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
+            cd openwrt
+            echo "=== 当前编译滚动分支: $REPO_BRANCH ==="
           fi
-          cd openwrt
-          echo "源码当前版本: $(git describe --tags --always)"
+          cat include/version.mk
 
-      - name: 初始化ccache缓存目录分层（新增umask 022 修复权限）
+      - name: 初始化缓存目录
         run: |
-          umask 022
           mkdir -p openwrt/dl
-          mkdir -p ${{ env.CCACHE_DIR }}
-          ccache -M 5G
-          ccache -F 0
+          mkdir -p $GITHUB_WORKSPACE/.ccache
+          ccache -M 2G
           ccache -o compression=true
-          ccache -o cache_dir_levels=${{ env.CCACHE_NLEVELS }}
-          ccache -o hash_dir=false
-          echo "==== 校验全局ccache配置 ===="
-          ccache -p | grep -E "hash_dir|max_size|max_files" || true
-          ccache -s | grep -E "(cache directory|primary config|depend mode)"
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache"
 
-      - name: 执行前置DIY脚本 diy1.sh，复制软件源配置
+      - name: 首次自定义配置 diy1.sh
         run: |
           cd openwrt
-          [ -f "../$FEEDS_CONF" ] && cp -f "../$FEEDS_CONF" ./
+          [ -f "../$FEEDS_CONF" ] && cp "../$FEEDS_CONF" ./
           if [ -f "../$DIY1_SH" ]; then
             chmod +x "../$DIY1_SH"
             "../$DIY1_SH"
           fi
 
-      - name: 缓存软件源 feeds 目录
+      - name: 缓存 dl 下载包目录
         uses: actions/cache@v5
         with:
-          path: |
-            openwrt/feeds
-            openwrt/package/feeds
-            openwrt/.feeds_installed
-          key: ${{ env.CACHE_VER }}-${{ runner.os }}-feeds-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-${{ hashFiles('feeds.conf.default','diy1.sh') }}
-          restore-keys: ${{ env.CACHE_VER }}-${{ runner.os }}-feeds-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-
+          path: openwrt/dl
+          key: dl-${{ runner.os }}-${{ env.REPO_TAG != '' ? env.REPO_TAG : env.REPO_BRANCH }}
+          restore-keys: |
+            dl-${{ runner.os }}-
 
-      - name: 更新并安装软件源
+      - name: 缓存 ccache 编译缓存
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.os }}-${{ env.REPO_TAG != '' ? env.REPO_TAG : env.REPO_BRANCH }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: 更新 & 安装软件源 feeds
         run: |
           cd openwrt
-          if [ -f .feeds_installed ]; then
-            echo "检测到完整feeds缓存标记，跳过update/install"
-          else
-            echo "无有效feeds缓存，执行更新与安装"
-            ./scripts/feeds update -a
-            ./scripts/feeds install -a
-            touch .feeds_installed
-          fi
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: 加载自定义编译配置 .config + 执行后置DIY脚本diy2.sh
+      - name: 导入.config配置并执行 diy2.sh
         run: |
-          [ -f "$CONFIG_FILE" ] && cp -f "$CONFIG_FILE" openwrt/.config
+          [ -f "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
           cd openwrt
           if [ -f "../$DIY2_SH" ]; then
             chmod +x "../$DIY2_SH"
             "../$DIY2_SH"
           fi
           make defconfig
-          ./scripts/diffconfig.sh > diffconfig
 
-      - name: 上传配置差异文件 diffconfig
-        if: hashFiles('openwrt/diffconfig') != '' && env.UPLOAD_ARTIFACT == 'true'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: 编译配置差异文件_${{ env.CURR_BUILD_TYPE }}_${{ env.BUILD_DATE }}
-          path: openwrt/diffconfig
-
-      - name: 缓存源码下载目录 dl
-        uses: actions/cache@v5
-        with:
-          path: openwrt/dl
-          key: >
-            ${{ env.CACHE_VER }}-${{ runner.os }}-dl-${{ env.CURR_BUILD_TYPE }}-
-            ${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-
-            ${{ github.ref_name }}-${{ hashFiles('openwrt/.config') }}
-          restore-keys: |
-            ${{ env.CACHE_VER }}-${{ runner.os }}-dl-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-${{ github.ref_name }}-
-            ${{ env.CACHE_VER }}-${{ runner.os }}-dl-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-
-
-      - name: 缓存ccache编译缓存
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: >
-            ${{ env.CACHE_VER }}-${{ runner.os }}-ccache-${{ env.CURR_BUILD_TYPE }}-
-            ${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-
-            ${{ hashFiles('openwrt/.config') }}
-          restore-keys: |
-            ${{ env.CACHE_VER }}-${{ runner.os }}-ccache-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-${{ github.ref_name }}-
-            ${{ env.CACHE_VER }}-${{ runner.os }}-ccache-${{ env.CURR_BUILD_TYPE }}-${{ env.CURR_BUILD_TYPE == 'snapshot' ? env.REPO_BRANCH : env.REPO_TAG }}-
-
-      - name: 差异化前置清理（snapshot=dirclean / stable=clean）
+      - name: 预下载全部源码包
         run: |
           cd openwrt
-          if [ "$CURR_BUILD_TYPE" = "snapshot" ]; then
-            echo "Snapshot 滚动分支，执行深度 dirclean 清理避免ABI污染"
-            make dirclean
-          else
-            echo "Stable 固定版本，执行轻度 clean 保留工具链缓存加速编译"
-            make clean
-          fi
+          make download -j$(nproc)
+          find dl -size -1024c -exec ls -l {} \; -exec rm -f {} \;
+          make download -j$(nproc) || make download -j1 V=s
 
-      - name: 预下载全部源码（分层重试，清理0字节与tmp临时文件）
-        run: |
-          cd openwrt
-          echo "第一层：多核并发下载"
-          make download -j$(nproc) V=s || sleep 5
-          echo "第二层：8线程降级重试"
-          make download -j8 V=s || sleep 10
-          echo "第三层：单线程兜底下载"
-          make download -j1 V=s
-          # 清理无效下载文件
-          find dl -type f -size 0 -delete
-          find dl -type f -name "*.tmp" -delete
-
-      - name: 全量并发编译固件（新增NINJA_STATUS日志进度，工业标准IGNORE_ERRORS=n，V=sc）
+      - name: 编译固件
         id: compile
         run: |
-          set -eo pipefail
+          export PATH="/usr/lib/ccache:$PATH"
+          export CCACHE_DIR="${{ github.workspace }}/.ccache"
           ccache -z
           cd openwrt
-          # 开启ninja编译进度可视化日志
-          export NINJA_STATUS="[%p %f/%t] "
-          echo "编译并发线程数: $(nproc)"
-          make -j$(nproc) \
-              IGNORE_ERRORS=n \
-              V=sc 2>&1 | stdbuf -oL -eL tee build_full.log
-          echo "==== 编译完成 ccache 命中率统计 ===="
-          ccache --show-stats
-          # 输出缓存占用大小，监控5G上限
-          echo "当前ccache缓存占用大小："
-          du -sh "$CCACHE_DIR"
-          ccache -sv || true
+          echo "使用 $(nproc) 线程编译"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          ccache -s
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 编译失败时精简并打包日志
-        if: failure()
+      - name: 检查磁盘占用
+        if: (!cancelled())
         run: |
-          cd openwrt
-          tail -n 20000 build_full.log > build_trim.log
-          tar -zcf build_log.tar.gz build_trim.log logs/ 2>/dev/null || true
+          df -hT
 
-      - name: 上传编译失败日志制品
-        if: failure() && env.UPLOAD_ARTIFACT == 'true'
+      - name: 上传完整bin目录工件
+        if: steps.compile.outcome == 'success' && env.UPLOAD_BIN_DIR == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: 编译失败日志包
-          path: openwrt/build_log.tar.gz
-
-      - name: 上传完整bin目录原始编译产物
-        if: steps.compile.outputs.status == 'success' && env.UPLOAD_ARTIFACT == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: 完整bin原始目录_${{ env.CURR_BUILD_TYPE }}_${{ env.BUILD_DATE }}
+          name: bin_${{ env.OPENWRT_NAME }}_${{ env.date1 }}
           path: openwrt/bin
 
-      - name: 固件整理分类（修复子Shell，数组显式初始化、全局sort-z排序、全零分隔遍历）
+      - name: 整理固件镜像文件
         id: organize
-        if: steps.compile.outputs.status == 'success'
+        if: steps.compile.outcome == 'success'
         run: |
-          mkdir -p "$FIRMWARE"
-          # 显式声明数组，规避未初始化风险
-          declare -a IMAGE_LIST=()
-          # 进程替换消除管道子Shell，sort -z固定文件遍历顺序
-          while IFS= read -r -d '' file; do
-            IMAGE_LIST+=("$file")
-          done < <(
-            find openwrt/bin/targets \
-              -type f \
-              \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) \
-              -print0 | sort -z
-          )
-
-          if [ ${#IMAGE_LIST[@]} -eq 0 ]; then
-            echo "错误：未生成任何固件镜像，终止发布流程"
+          mkdir -p firmware
+          first_file=$(find openwrt/bin/targets \
+            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) | head -1)
+          if [ -z "$first_file" ]; then
+            echo "ERROR: 未找到固件镜像文件！"
             exit 1
           fi
-          first_file="${IMAGE_LIST[0]}"
           target_dir=$(dirname "$first_file")
           parent=$(basename "$(dirname "$target_dir")")
           child=$(basename "$target_dir")
           device="${parent}_${child}"
           device=$(echo "$device" | sed 's/[^a-zA-Z0-9._-]/_/g')
           echo "DEVICE_NAME=$device" >> $GITHUB_ENV
-
-          # Shell原生变量拼接文件名，无表达式语法错误
-          cp openwrt/.config "${FIRMWARE}/${BUILD_DATE}_${OPENWRT_NAME}_${CURR_BUILD_TYPE}_${device}.config"
-          if [ -f openwrt/diffconfig ]; then
-            cp openwrt/diffconfig "${FIRMWARE}/${BUILD_DATE}_${OPENWRT_NAME}_${CURR_BUILD_TYPE}_${device}.diffconfig"
-          fi
-
-          # 通用转换函数：截取相对路径，/替换为下划线，彻底避免同名覆盖
-          copy_with_full_relname() {
-              local src="$1"
-              local rel="${src#openwrt/bin/targets/}"
-              local dstname=$(echo "$rel" | tr '/' '_')
-              cp "$src" "$FIRMWARE/$dstname"
-          }
-
-          # 零分隔遍历sha256sums
-          find openwrt/bin/targets -name sha256sums -print0 | sort -z | while IFS= read -r -d '' file
-          do
-            copy_with_full_relname "$file"
-          done
-          # 零分隔遍历buildinfo
-          find openwrt/bin/targets -name "*.buildinfo" -print0 | sort -z | while IFS= read -r -d '' file
-          do
-            copy_with_full_relname "$file"
-          done
-          # 零分隔遍历profiles.json
-          find openwrt/bin/targets -name "profiles.json" -print0 | sort -z | while IFS= read -r -d '' file
-          do
-            copy_with_full_relname "$file"
-          done
-
-          # 复制固件镜像
-          for file in "${IMAGE_LIST[@]}"
+          cp openwrt/.config "firmware/${date1}_${OPENWRT_NAME}_${device}.config"
+          find openwrt/bin/targets \
+            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) | while read file
           do
             base=$(basename "$file")
             clean_base=$(echo "$base" | sed -E 's/^([^-]+-){3}//')
-            cp "$file" "${FIRMWARE}/${BUILD_DATE}_${OPENWRT_NAME}_${CURR_BUILD_TYPE}_${device}_${clean_base}"
+            cp "$file" "firmware/${date1}_${OPENWRT_NAME}_${device}_${clean_base}"
           done
+          cd firmware
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+          ls -lh
 
-          # 零分隔安全生成manifest，兼容空格/中文/括号文件名，排除自身
-          (
-            cd "$FIRMWARE"
-            find . -maxdepth 1 -type f ! -name manifest.txt -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              > manifest.txt
-          )
-
-          echo "==== 固件目录文件体积统计 ===="
-          du -sh "$FIRMWARE"/*
-
-      - name: 检测sysupgrade升级固件是否存在
-        id: check_sysupgrade
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          if ls "$FIRMWARE"/*sysupgrade* 2>/dev/null; then
-            echo "has_sysupgrade=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_sysupgrade=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 上传sysupgrade升级固件制品
-        if: steps.compile.outputs.status == 'success' && steps.check_sysupgrade.outputs.has_sysupgrade == 'true' && env.UPLOAD_ARTIFACT == 'true'
+      - name: 上传整理后固件工件
+        if: steps.organize.outcome == 'success' && env.UPLOAD_FIRMWARE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: 升级固件_sysupgrade_${{ env.DEVICE_NAME }}_${{ env.BUILD_DATE }}
-          path: ${{ env.FIRMWARE }}/*sysupgrade*
+          name: firmware_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${{ env.date1 }}
+          path: ${{ env.FIRMWARE }}
 
-      - name: 检测factory全新刷机固件是否存在
-        id: check_factory
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          if ls "$FIRMWARE"/*factory* 2>/dev/null; then
-            echo "has_factory=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_factory=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 上传factory全新刷机固件制品
-        if: steps.compile.outputs.status == 'success' && steps.check_factory.outputs.has_factory == 'true' && env.UPLOAD_ARTIFACT == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: 全新刷机固件_factory_${{ env.DEVICE_NAME }}_${{ env.BUILD_DATE }}
-          path: ${{ env.FIRMWARE }}/*factory*
-
-      - name: 检测编译配置文件.config是否存在
-        id: check_config
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          if ls "$FIRMWARE"/*.config 2>/dev/null; then
-            echo "has_config=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_config=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 上传编译配置文件制品
-        if: steps.compile.outputs.status == 'success' && steps.check_config.outputs.has_config == 'true' && env.UPLOAD_ARTIFACT == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: 编译配置文件_config_${{ env.DEVICE_NAME }}_${{ env.BUILD_DATE }}
-          path: ${{ env.FIRMWARE }}/*.config
-
-      - name: Release发布前全局校验固件清单（改用print0零分隔兼容中文文件名）
-        id: release_validate
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          echo "完整固件目录清单："
-          ls -la "$FIRMWARE"/
-          declare -a RELEASE_FILES=()
-          while IFS= read -r -d '' f; do
-            RELEASE_FILES+=("$f")
-          done < <(
-            find "$FIRMWARE" -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" -o -name "*.diffconfig" -o -name "*sha256sums" -o -name "*.buildinfo" -o -name "*profiles.json" -o -name "*.config" -o -name "manifest.txt" \) -print0 | sort -z
-          )
-          if [ ${#RELEASE_FILES[@]} -eq 0 ]; then
-            echo "has_release_file=false" >> $GITHUB_OUTPUT
-            echo "错误：无可用刷机固件，跳过GitHub Release发布"
-          else
-            echo "has_release_file=true" >> $GITHUB_OUTPUT
-            echo "Release待上传文件清单："
-            printf "%s\n" "${RELEASE_FILES[@]}"
-          fi
-
-      - name: 推送固件至GitHub Release发布页
-        if: >
-          steps.compile.outputs.status == 'success' &&
-          env.UPLOAD_RELEASE == 'true' &&
-          steps.release_validate.outputs.has_release_file == 'true'
+      - name: 自动发布 Release
+        if: steps.organize.outcome == 'success'
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.BUILD_DATE }}-${{ github.run_number }}-${{ env.CURR_BUILD_TYPE }}
-          name: ${{ env.date3 }} ${{ env.CURR_BUILD_TYPE }} 固件安装包
-          generate_release_notes: true
-          files: |
-            firmware/*sysupgrade*
-            firmware/*factory*
-            firmware/*combined*
-            firmware/*.diffconfig
-            firmware/*sha256sums
-            firmware/*.buildinfo
-            firmware/*profiles.json
-            firmware/*.config
-            firmware/manifest.txt
+          tag_name: ${{ env.date1 }}-${{ github.run_number }}
+          name: ${{ env.date3 }} ${{ env.OPENWRT_NAME }}
+          files: ${{ env.FIRMWARE }}/*
           draft: false
           prerelease: false
 
-      - name: 构建收尾缓存整理与日志清理（移除重复ccache -F 0）
+      - name: 编译后深度清理磁盘
         if: always()
         run: |
           cd openwrt
-          # 仅保留统计与缓存碎片整理，-F 0初始化已永久生效
-          ccache --show-stats
-          ccache -c
-          # 清理临时编译目录、日志
-          rm -rf \
-            build_dir \
-            staging_dir \
-            tmp \
-            bin \
-            build_full.log \
-            build_trim.log \
-            build_log.tar.gz \
-            logs
-          rm -f $GITHUB_WORKSPACE/files.txt
+          rm -rf build_dir staging_dir tmp bin
+          ccache -s || true
+          df -h
