@@ -1,15 +1,27 @@
-name: 编译 OpenWrt 25.12 系列(滚动/稳定Tag自动适配)
+name: 编译 OpenWrt 25.12 系列(稳定/滚动一键切换)
 
 on:
   push:
     branches: [ master ]
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      BUILD_MODE:
+        description: 编译模式（无需修改yml，运行时选择）
+        type: choice
+        required: true
+        default: Stable
+        options:
+          - Stable
+          - Snapshot
 
+# 版本统一配置区，后续升级仅修改这里即可
 env:
+  # OpenWrt官方源码地址
   REPO_URL: https://github.com/openwrt/openwrt
+  # 滚动开发分支
   REPO_BRANCH: openwrt-25.12
-  # 编译稳定版填 v25.12.4；编译滚动分支填 ""
+  # 固定稳定版标签，新版本直接替换，如v25.12.5
   REPO_TAG: v25.12.4
 
   CONFIG_FILE: .config
@@ -65,19 +77,22 @@ jobs:
       - name: 检出仓库代码
         uses: actions/checkout@v5
 
-      - name: 初始化全局变量（区分稳定版/滚动分支）
+      - name: 初始化全局变量（根据运行选择自动适配）
         run: |
           sudo timedatectl set-timezone "$TZ"
           echo "date1=$(date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
           echo "date2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
           echo "date3=$(date '+%Y年%m月%d日')" >> $GITHUB_ENV
 
-          if [ -n "$REPO_TAG" ]; then
+          BUILD_MODE=${{ github.event.inputs.BUILD_MODE }}
+          if [[ "$BUILD_MODE" == "Stable" ]]; then
             echo "CACHE_KEY=$REPO_TAG" >> $GITHUB_ENV
             echo "OPENWRT_NAME=OpenWrt-${REPO_TAG}-Stable" >> $GITHUB_ENV
+            echo "USE_TAG=true" >> $GITHUB_ENV
           else
             echo "CACHE_KEY=$REPO_BRANCH" >> $GITHUB_ENV
             echo "OPENWRT_NAME=OpenWrt-${REPO_BRANCH}-Snapshot" >> $GITHUB_ENV
+            echo "USE_TAG=false" >> $GITHUB_ENV
           fi
 
       - name: 安装编译依赖
@@ -107,13 +122,11 @@ jobs:
 
       - name: 克隆OpenWrt源码（修复Annotated Tag警告）
         run: |
-          # 先克隆基础分支，避免直接clone tag产生警告
           git clone --depth 10 -b $REPO_BRANCH $REPO_URL openwrt
           cd openwrt
-          # 拉取指定Tag
           git fetch origin tag $REPO_TAG
-          if [ -n "$REPO_TAG" ]; then
-            # -B 存在则覆盖，不存在新建分支
+
+          if [[ "${USE_TAG}" == "true" ]]; then
             git checkout tags/$REPO_TAG -B release-$REPO_TAG
             echo "=== 当前编译固定稳定Tag: $REPO_TAG ==="
           else
