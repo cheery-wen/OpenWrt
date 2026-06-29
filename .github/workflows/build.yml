@@ -22,7 +22,7 @@ env:
   # 滚动开发分支
   REPO_BRANCH: openwrt-25.12
   # 固定稳定版标签，新版本直接替换，如v25.12.5
-  REPO_TAG: v25.12.4
+  REPO_TAG: v25.12.5
 
   CONFIG_FILE: .config
   FEEDS_CONF: feeds.conf.default
