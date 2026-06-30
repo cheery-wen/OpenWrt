@@ -10,8 +10,6 @@
 
 - Stable 模式：基于 OpenWrt 官方 Tag（默认 v25.12.5）
 - Snapshot 模式：基于 openwrt-25.12 滚动分支
-- 一套 CI 工作流支持两种固件输出
-- 自动 Release 发布（按日期 + Run Number）
 
 ---
 
