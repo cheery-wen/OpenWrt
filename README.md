@@ -1,4 +1,4 @@
-# OpenWrt 25.12 Custom Firmware 
+# 基于OpenWrt 25.12 编译
 
 本项目基于 OpenWrt 官方 `openwrt-25.12` 分支构建，采用 GitHub Actions 自动化编译，支持 Stable / Snapshot 双模式切换，并集成多项针对 x86_64 软路由场景的优化与增强补丁。
 
