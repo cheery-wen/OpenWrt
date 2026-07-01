@@ -1,4 +1,4 @@
-name: 编译 OpenWrt 25.12 系列(稳定/滚动一键切换)
+name: 编译官方 OpenWrt 25.12 
 
 on:
   push:
