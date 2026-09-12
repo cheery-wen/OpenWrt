@@ -69,14 +69,14 @@ echo "🗑️ 清理 Go 缓存"
 rm -rf dl/go-mod-cache 2>/dev/null || true
 
 # ==================================================
-# 5. 替换 Golang 26.x
+# 5. 替换 Golang 27.x
 # ==================================================
-echo "🔥 替换 Golang 26.x"
+echo "🔥 替换 Golang 27.x"
 
 rm -rf feeds/packages/lang/golang 2>/dev/null || true
 
 git clone https://github.com/sbwml/packages_lang_golang \
--b 26.x \
+-b 27.x \
 feeds/packages/lang/golang
 
 # ==================================================
