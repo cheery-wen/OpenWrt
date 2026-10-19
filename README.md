@@ -8,7 +8,7 @@
 
 ### 📦 双模式构建系统
 
-- Stable 模式：基于 OpenWrt 官方 Tag（默认 v25.12.5）
+- Stable 模式：基于 OpenWrt 官方 Tag（默认 v25.12.6）
 - Snapshot 模式：基于 openwrt-25.12 滚动分支
 
 ---
