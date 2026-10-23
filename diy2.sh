@@ -121,27 +121,38 @@ grep -E '^(PKG_NAME|PKG_VERSION|PKG_SOURCE_VERSION):=' \
     package/luci-app-smartdns/Makefile || true
 
 # ==================================================
+# ==================================================
 # 6. 替换 Golang 27.x
 # ==================================================
 echo "🔥 替换 Golang 27.x"
 
 GO_DIR="feeds/packages/lang/golang"
+GO_REPO="https://github.com/sbwml/packages_lang_golang"
+GO_BRANCH="27.x"
 
-if [ -d "$GO_DIR" ]; then
-    rm -rf "$GO_DIR"
-fi
+rm -rf "$GO_DIR"
 
-git clone --depth 1 \
-    -b 27.x \
-    https://github.com/sbwml/packages_lang_golang \
-    "$GO_DIR"
+mkdir -p "$(dirname "$GO_DIR")"
 
-if [ ! -f "$GO_DIR/Makefile" ]; then
-    echo "❌ Golang 27.x 仓库检查失败"
+if ! git clone --depth 1 \
+    --single-branch \
+    -b "$GO_BRANCH" \
+    "$GO_REPO" \
+    "$GO_DIR"; then
+    echo "❌ Golang 仓库克隆失败"
+    echo "请检查仓库地址、27.x 分支是否存在，以及 GitHub 网络连接"
     exit 1
 fi
 
-echo "✅ Golang 27.x 仓库已就绪"
+# OpenWrt 的 Golang 软件包 Makefile 应位于 golang 子目录
+if [ ! -f "$GO_DIR/golang/Makefile" ]; then
+    echo "❌ 未找到 $GO_DIR/golang/Makefile"
+    echo "仓库目录结构可能与预期不一致，实际文件如下："
+    find "$GO_DIR" -maxdepth 3 -name Makefile -print | head -n 30
+    exit 1
+fi
+
+echo "✅ Golang $GO_BRANCH 仓库检查通过"
 
 # ==================================================
 # 7. 完成
