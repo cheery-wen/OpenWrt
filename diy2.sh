@@ -77,6 +77,22 @@ echo "🔍 检查 SmartDNS 软件包"
 find package feeds -path '*/smartdns/Makefile' -o \
     -path '*/luci-app-smartdns/Makefile' 2>/dev/null
 
+    echo "===== SmartDNS Makefile 来源检查 ====="
+
+for f in \
+    package/openwrt-passwall-packages/smartdns/Makefile \
+    package/luci-app-smartdns/Makefile \
+    feeds/luci/applications/luci-app-smartdns/Makefile \
+    feeds/packages/net/smartdns/Makefile
+do
+    if [ -f "$f" ]; then
+        echo
+        echo "----- $f -----"
+        grep -E '^(PKG_NAME|PKG_VERSION|PKG_SOURCE_VERSION|LUCI_TITLE|define Package/)' "$f" \
+            | head -n 20
+    fi
+done
+
 # ==================================================
 # 7. 替换 Golang 27.x
 # ==================================================
