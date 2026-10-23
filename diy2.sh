@@ -1,15 +1,11 @@
 #!/bin/bash
 set -e
 
-echo "========================================="
 echo "🚀 OpenWrt 25.12 DIY2 开始"
-echo "========================================="
 
 # ==================================================
-# 1. x86 自适应网口
+# 1. 自适应网口
 # ==================================================
-echo "🌐 配置 x86 自适应网口"
-
 BOARD_D_PATH="target/linux/x86/base-files/etc/board.d"
 mkdir -p "$BOARD_D_PATH"
 
@@ -22,12 +18,11 @@ cat > "$BOARD_D_PATH/02_network" << "EOF"
 board_config_update
 
 ALL_ETH=$(ls /sys/class/net/ 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
-COUNT=$(echo "$ALL_ETH" | grep -c . || true)
+COUNT=$(echo "$ALL_ETH" | wc -l)
 
 if [ "$COUNT" -ge 2 ]; then
-    WAN_PORT=$(echo "$ALL_ETH" | head -n 1)
+    WAN_PORT=$(echo "$ALL_ETH" | head -n1)
     LAN_PORTS=$(echo "$ALL_ETH" | tail -n +2 | tr '\n' ' ')
-
     ucidef_set_interfaces_lan_wan "$LAN_PORTS" "$WAN_PORT"
 elif [ "$COUNT" -eq 1 ]; then
     ucidef_set_interface_lan "$ALL_ETH"
@@ -42,25 +37,19 @@ chmod +x "$BOARD_D_PATH/02_network"
 # ==================================================
 # 2. 默认 LAN IP
 # ==================================================
-echo "⚙️ 设置默认 LAN IP：192.168.5.1"
+echo "⚙️ 设置 LAN IP -> 192.168.5.1"
 
-CONFIG_GENERATE="package/base-files/files/bin/config_generate"
-
-if [ -f "$CONFIG_GENERATE" ]; then
-    sed -i 's/192\.168\.1\.1/192.168.5.1/g' "$CONFIG_GENERATE"
-else
-    echo "⚠️ 未找到 $CONFIG_GENERATE"
-fi
+sed -i 's/192.168.1.1/192.168.5.1/g' \
+    package/base-files/files/bin/config_generate || true
 
 # ==================================================
 # 3. 默认时区
 # ==================================================
-echo "🕒 设置默认时区：Asia/Shanghai"
+echo "🕒 设置 Asia/Shanghai 时区"
 
-TIMEZONE_DIR="package/base-files/files/etc/uci-defaults"
-mkdir -p "$TIMEZONE_DIR"
+mkdir -p package/base-files/files/etc/uci-defaults
 
-cat > "$TIMEZONE_DIR/99-timezone" << "EOF"
+cat > package/base-files/files/etc/uci-defaults/99-timezone << "EOF"
 #!/bin/sh
 
 uci set system.@system[0].timezone='CST-8'
@@ -70,185 +59,121 @@ uci commit system
 exit 0
 EOF
 
-chmod +x "$TIMEZONE_DIR/99-timezone"
+chmod +x package/base-files/files/etc/uci-defaults/99-timezone
 
 # ==================================================
-# 4. 清理 Go 模块缓存
+# 4. 清理 Go Cache
 # ==================================================
-echo "🗑️ 清理 Go 模块缓存"
+echo "🗑️ 清理 Go 缓存"
 
 rm -rf dl/go-mod-cache 2>/dev/null || true
 
 # ==================================================
 # 5. 替换 Golang 27.x
 # ==================================================
-echo "🔥 配置 sbwml Golang 27.x"
+echo "🔥 替换 Golang 27.x"
 
-GO_DIR="feeds/packages/lang/golang"
+rm -rf feeds/packages/lang/golang 2>/dev/null || true
 
-rm -rf "$GO_DIR"
-
-git clone --depth 1 \
+git clone https://github.com/sbwml/packages_lang_golang \
     -b 27.x \
-    https://github.com/sbwml/packages_lang_golang \
-    "$GO_DIR"
-
-if [ ! -f "$GO_DIR/golang/Makefile" ]; then
-    echo "❌ 未找到 $GO_DIR/golang/Makefile"
-    exit 1
-fi
-
-echo "✅ Golang 27.x 源码目录检查通过"
+    feeds/packages/lang/golang
 
 # ==================================================
-# 6. 清理官方 feeds 中的重复 SmartDNS
+# 6. SmartDNS：清理官方重复软件包
 # ==================================================
-echo "🧹 清理官方 SmartDNS 重复包"
+echo "🔧 整理 SmartDNS 软件包来源"
 
-rm -rf \
-    feeds/packages/net/smartdns \
-    feeds/luci/applications/luci-app-smartdns
-
-# 清理此前 DIY1 可能克隆的另一份官方核心。
-# 新版 DIY1 已不再克隆此仓库。
-rm -rf package/openwrt-smartdns
-
-# 删除 feeds install -a 生成的对应软件包入口。
-# 不会删除 package/openwrt-passwall-packages 中的核心。
-if [ -d package/feeds ]; then
-    find package/feeds \
-        -iname '*smartdns*' \
-        -prune \
-        -exec rm -rf {} + 2>/dev/null || true
-fi
-
-# ==================================================
-# 7. 修复官方 luci-app-smartdns 的循环依赖
+# 保留：
+# package/openwrt-passwall-packages/smartdns
+# package/luci-app-smartdns
 #
-# WebUI 由 .config 中的 CONFIG_PACKAGE_smartdns-ui=y
-# 独立启用，不再让 LuCI 插件通过条件依赖选择 smartdns-ui。
+# 删除官方 feeds 中的重复版本，避免同名软件包冲突。
+rm -rf feeds/packages/net/smartdns
+rm -rf feeds/luci/applications/luci-app-smartdns
+
+# 如果 feeds install 已创建对应链接，也清理这些链接。
+rm -rf package/feeds/packages/smartdns
+rm -rf package/feeds/luci/luci-app-smartdns
+
 # ==================================================
-echo "🔧 修复 SmartDNS LuCI 依赖定义"
+# 7. 修正 SmartDNS LuCI 的可选 UI 依赖
+# ==================================================
+echo "🔧 检查 SmartDNS LuCI 依赖"
 
-LUCI_SMARTDNS="package/luci-app-smartdns/Makefile"
+SMARTDNS_LUCI_MK="package/luci-app-smartdns/Makefile"
 
-if [ ! -f "$LUCI_SMARTDNS" ]; then
-    echo "❌ 未找到 $LUCI_SMARTDNS"
-    exit 1
-fi
-
-python3 - <<'PY'
-from pathlib import Path
+if [ -f "$SMARTDNS_LUCI_MK" ]; then
+    python3 - "$SMARTDNS_LUCI_MK" <<'PY'
+import pathlib
 import re
+import sys
 
-p = Path("package/luci-app-smartdns/Makefile")
-s = p.read_text()
+path = pathlib.Path(sys.argv[1])
+content = path.read_text()
 
-# 把带有可选 smartdns-ui 的条件依赖改为普通依赖。
-dep_pattern = re.compile(
-    r'LUCI_DEPENDS:=\+luci-base \+smartdns\s*\\\s*'
-    r'\+PACKAGE_\$\(PKG_NAME\)_INCLUDE_smartdns_ui:smartdns-ui'
+# 移除可选 smartdns-ui 的 Kconfig 配置块。
+# smartdns-ui 独立由 .config 选择，不再通过 LuCI 包的选项选择，
+# 避免 PACKAGE_luci-app-smartdns 与 PACKAGE_smartdns-ui 的循环依赖。
+content_new, config_count = re.subn(
+    r"(?ms)^define Package/\$\(PKG_NAME\)/config\s*\n.*?^endef[ \t]*\n?",
+    "",
+    content,
+    count=1,
 )
 
-if dep_pattern.search(s):
-    s = dep_pattern.sub(
-        'LUCI_DEPENDS:=+luci-base +smartdns',
-        s,
-        count=1
-    )
-elif 'LUCI_DEPENDS:=+luci-base +smartdns' not in s:
-    raise SystemExit(
-        "❌ 未匹配到预期的 LUCI_DEPENDS 定义；"
-        "请检查上游 Makefile 是否已变更。"
-    )
-
-# 删除原来用于条件选择 smartdns-ui 的 Kconfig 配置块。
-config_pattern = re.compile(
-    r'\ndefine Package/\$\(PKG_NAME\)/config\n'
-    r'.*?\nendef\n',
-    re.S
+# 将 LuCI 依赖固定为 luci-base 和 smartdns。
+# smartdns-ui 如需安装，由 .config 单独选择。
+content_new, dep_count = re.subn(
+    r"(?m)^LUCI_DEPENDS:=.*(?:\\\n[ \t]*\+PACKAGE_\$\(PKG_NAME\)_INCLUDE_smartdns_ui:smartdns-ui)?[ \t]*$",
+    "LUCI_DEPENDS:=+luci-base +smartdns",
+    content_new,
+    count=1,
 )
 
-s, count = config_pattern.subn('\n', s, count=1)
+if dep_count == 0:
+    if "LUCI_DEPENDS:=+luci-base +smartdns" not in content_new:
+        print("ERROR: 未找到可识别的 LUCI_DEPENDS 配置，未写入修改。")
+        sys.exit(1)
 
-# 如果该配置块已经不存在，允许重复执行。
-if count == 0 and 'INCLUDE_smartdns_ui' in s:
-    raise SystemExit(
-        "❌ 仍检测到 INCLUDE_smartdns_ui，停止以避免错误修改。"
-    )
+if config_count == 0 and "INCLUDE_smartdns_ui" in content_new:
+    print("ERROR: 未能移除 SmartDNS 的可选 UI 配置块。")
+    sys.exit(1)
 
-p.write_text(s)
-print("✅ SmartDNS LuCI 依赖定义检查完成")
+path.write_text(content_new)
+
+print("SmartDNS LuCI Makefile 检查完成")
+print("移除可选 UI 配置块：", config_count)
+print("依赖配置处理次数：", dep_count)
 PY
-
-# 确认修改后保留必要依赖，且不再出现可选 UI 配置符号。
-grep -q 'LUCI_DEPENDS:=+luci-base +smartdns' "$LUCI_SMARTDNS"
-
-if grep -q 'INCLUDE_smartdns_ui' "$LUCI_SMARTDNS"; then
-    echo "❌ SmartDNS LuCI 中仍存在 INCLUDE_smartdns_ui"
+else
+    echo "❌ 未找到 $SMARTDNS_LUCI_MK"
     exit 1
 fi
 
-echo "✅ SmartDNS LuCI 循环依赖配置已移除"
-
 # ==================================================
-# 8. 清理 Weechat 循环依赖入口
-#
-# 当前 .config 不使用 Weechat。
-# 日志显示该组包自身存在 Kconfig 循环依赖，
-# 因此删除 feeds install 后生成的相关入口。
+# 8. 检查关键软件包
 # ==================================================
-echo "🧹 清理未使用的 Weechat 软件包入口"
+echo "🔍 检查关键软件包"
 
-if [ -d package/feeds ]; then
-    find package/feeds \
-        -iname '*weechat*' \
-        -prune \
-        -exec rm -rf {} + 2>/dev/null || true
+if [ ! -f package/openwrt-passwall-packages/smartdns/Makefile ]; then
+    echo "❌ 未找到 PassWall packages 中的 SmartDNS Makefile"
+    exit 1
 fi
 
+if [ ! -f package/luci-app-smartdns/Makefile ]; then
+    echo "❌ 未找到 luci-app-smartdns Makefile"
+    exit 1
+fi
+
+if [ ! -f feeds/packages/lang/golang/golang/Makefile ]; then
+    echo "❌ 未找到 Golang Makefile"
+    exit 1
+fi
+
+echo "✅ SmartDNS 核心、LuCI 和 Golang 检查通过"
+
 # ==================================================
-# 9. 检查 SmartDNS 核心、WebUI 和 LuCI
+# 完成
 # ==================================================
-echo
-echo "========== SmartDNS 文件检查 =========="
-
-for f in \
-    package/openwrt-passwall-packages/smartdns/Makefile \
-    package/luci-app-smartdns/Makefile
-do
-    if [ -f "$f" ]; then
-        echo "✅ $f"
-    else
-        echo "❌ 缺少文件：$f"
-        exit 1
-    fi
-done
-
-echo
-echo "========== SmartDNS 相关路径 =========="
-
-find package/openwrt-passwall-packages \
-    -iname '*smartdns*' \
-    -print 2>/dev/null || true
-
-find package/feeds \
-    -iname '*smartdns*' \
-    -print 2>/dev/null || true
-
-echo
-echo "========== SmartDNS LuCI 依赖确认 =========="
-
-grep -n -E \
-    '^(PKG_NAME|PKG_VERSION|LUCI_DEPENDS|define Package/.*config|config PACKAGE_)' \
-    package/luci-app-smartdns/Makefile || true
-
-echo
-echo "========== DIY2 完成 =========="
-echo "✅ 自适应网口配置完成"
-echo "✅ 默认 LAN IP 配置完成"
-echo "✅ 默认时区配置完成"
-echo "✅ SmartDNS 重复包清理完成"
-echo "✅ SmartDNS LuCI 依赖修正完成"
-echo "✅ Weechat 循环依赖入口清理完成"
-echo "========================================="
+echo "✅ OpenWrt 25.12 DIY2 执行完成"
