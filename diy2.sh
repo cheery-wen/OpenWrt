@@ -68,8 +68,17 @@ echo "🗑️ 清理 Go 缓存"
 
 rm -rf dl/go-mod-cache 2>/dev/null || true
 
+
 # ==================================================
-# 5. 替换 Golang 27.x
+# 6. 检查 SmartDNS 软件包来源
+# ==================================================
+echo "🔍 检查 SmartDNS 软件包"
+
+find package feeds -path '*/smartdns/Makefile' -o \
+    -path '*/luci-app-smartdns/Makefile' 2>/dev/null
+
+# ==================================================
+# 7. 替换 Golang 27.x
 # ==================================================
 echo "🔥 替换 Golang 27.x"
 
