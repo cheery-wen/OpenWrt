@@ -102,9 +102,9 @@ fi
 echo "✅ Golang 27.x 检查通过"
 
 # ==================================================
-# 6. 清理官方 SmartDNS，避免多份核心包冲突
+# 6. 清理官方 feeds 中的 SmartDNS
 # ==================================================
-echo "🧹 检查并清理官方 feeds 中的 SmartDNS"
+echo "🧹 检查并清理官方 SmartDNS 源目录"
 
 OFFICIAL_SMARTDNS="feeds/packages/net/smartdns"
 OFFICIAL_SMARTDNS_LUCI="feeds/luci/applications/luci-app-smartdns"
@@ -124,10 +124,10 @@ else
 fi
 
 # ==================================================
-# 7. SmartDNS 依赖诊断
+# 7. 查找 SmartDNS 相关文件
 # ==================================================
 echo
-echo "========== 1. 查找 feeds 中的 SmartDNS 文件 =========="
+echo "========== 1. 查找 package/feeds 中的 SmartDNS 文件 =========="
 
 find package/feeds -path '*smartdns*' -print 2>/dev/null || true
 
@@ -135,26 +135,56 @@ echo
 echo "========== 2. 检查 SmartDNS 相关依赖定义 =========="
 
 grep -R -n -E \
-    'PACKAGE_smartdns|smartdns-ui|luci-app-smartdns' \
-    package/openwrt-passwall-packages \
+    'smartdns-ui|PACKAGE_smartdns|INCLUDE_smartdns_ui|select.*smartdns|depends on.*smartdns' \
+    package/openwrt-passwall-packages/smartdns \
     package/luci-app-smartdns \
     package/feeds \
     2>/dev/null || true
 
+# ==================================================
+# 8. 输出 PassWall SmartDNS 核心包完整 Makefile
+# ==================================================
 echo
-echo "========== 3. 检查 SmartDNS Makefile =========="
+echo "========== 3. PassWall SmartDNS 完整 Makefile =========="
+
+PASSWALL_SMARTDNS="package/openwrt-passwall-packages/smartdns/Makefile"
+
+if [ -f "$PASSWALL_SMARTDNS" ]; then
+    cat "$PASSWALL_SMARTDNS"
+else
+    echo "⚠️ 未找到：$PASSWALL_SMARTDNS"
+fi
+
+# ==================================================
+# 9. 输出第三方 LuCI SmartDNS 完整 Makefile
+# ==================================================
+echo
+echo "========== 4. LuCI SmartDNS 完整 Makefile =========="
+
+LUCI_SMARTDNS="package/luci-app-smartdns/Makefile"
+
+if [ -f "$LUCI_SMARTDNS" ]; then
+    cat "$LUCI_SMARTDNS"
+else
+    echo "⚠️ 未找到：$LUCI_SMARTDNS"
+fi
+
+# ==================================================
+# 10. 检查 feeds 中可能残留的重复定义
+# ==================================================
+echo
+echo "========== 5. 检查残留 SmartDNS Makefile =========="
 
 for f in \
-    package/openwrt-passwall-packages/smartdns/Makefile \
-    package/luci-app-smartdns/Makefile \
     package/feeds/packages/smartdns/Makefile \
     package/feeds/packages/smartdns-ui/Makefile \
-    package/feeds/luci/luci-app-smartdns/Makefile
+    package/feeds/luci/luci-app-smartdns/Makefile \
+    feeds/packages/net/smartdns/Makefile \
+    feeds/luci/applications/luci-app-smartdns/Makefile
 do
     if [ -f "$f" ]; then
         echo
         echo "----- $f -----"
-
         grep -n -E \
             '^(PKG_NAME|PKG_VERSION|DEPENDS|LUCI_DEPENDS|define Package/|[[:space:]]*select |[[:space:]]*config PACKAGE_)' \
             "$f" || true
@@ -165,14 +195,15 @@ echo
 echo "========== SmartDNS 诊断结束 =========="
 
 # ==================================================
-# 8. 检查 LuCI 应用和 SmartDNS 核心包
+# 11. 检查必要文件
 # ==================================================
 echo
-echo "========== SmartDNS 文件检查 =========="
+echo "========== 6. 必要文件检查 =========="
 
 for f in \
     package/openwrt-passwall-packages/smartdns/Makefile \
-    package/luci-app-smartdns/Makefile
+    package/luci-app-smartdns/Makefile \
+    feeds/packages/lang/golang/golang/Makefile
 do
     if [ -f "$f" ]; then
         echo "✅ 找到：$f"
@@ -181,6 +212,9 @@ do
     fi
 done
 
+# ==================================================
+# 完成
+# ==================================================
 echo
 echo "========================================="
 echo "✅ OpenWrt 25.12 DIY2 执行完成"
