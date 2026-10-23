@@ -1,4 +1,5 @@
-name: 编译官方 OpenWrt 25.12 
+
+name: 编译官方 OpenWrt 25.12
 
 on:
   push:
@@ -21,7 +22,7 @@ env:
   REPO_URL: https://github.com/openwrt/openwrt
   # 滚动开发分支
   REPO_BRANCH: openwrt-25.12
-  # 固定稳定版标签，新版本直接替换，如v25.12.6
+  # 固定稳定版标签
   REPO_TAG: v25.12.6
 
   CONFIG_FILE: .config
@@ -113,11 +114,18 @@ jobs:
             libpython3-dev libreadline-dev \
             libssl-dev libtool \
             lrzsz msmtp ninja-build \
+            nodejs npm \
             p7zip p7zip-full patch pkgconf \
             python3 python3-pyelftools python3-setuptools \
             qemu-utils rsync scons squashfs-tools \
             subversion swig texinfo uglifyjs \
             unzip upx wget xmlto xxd zlib1g-dev
+
+          echo "==== 检查 Node.js 和 npm ===="
+          which node
+          node --version
+          which npm
+          npm --version
           df -h
 
       - name: 克隆OpenWrt源码（修复Annotated Tag警告）
@@ -139,7 +147,7 @@ jobs:
       - name: 初始化缓存目录
         run: |
           mkdir -p openwrt/dl
-          mkdir -p $GITHUB_WORKSPACE/.ccache
+          mkdir -p "$GITHUB_WORKSPACE/.ccache"
           ccache -M 2G
           ccache -o compression=true
 
@@ -222,27 +230,33 @@ jobs:
           mkdir -p firmware
           first_file=$(find openwrt/bin/targets \
             -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) | head -1)
+
           if [ -z "$first_file" ]; then
             echo "ERROR: 未找到固件镜像文件！"
             exit 1
           fi
+
           target_dir=$(dirname "$first_file")
           parent=$(basename "$(dirname "$target_dir")")
           child=$(basename "$target_dir")
           device="${parent}_${child}"
           device=$(echo "$device" | sed 's/[^a-zA-Z0-9._-]/_/g')
-          echo "DEVICE_NAME=$device" >> $GITHUB_ENV
+
+          echo "DEVICE_NAME=$device" >> "$GITHUB_ENV"
           cp openwrt/.config "firmware/${date1}_${OPENWRT_NAME}_${device}.config"
+
           find openwrt/bin/targets \
-            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) | while read file
+            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) |
+          while read -r file
           do
             base=$(basename "$file")
             clean_base=$(echo "$base" | sed -E 's/^([^-]+-){3}//')
             cp "$file" "firmware/${date1}_${OPENWRT_NAME}_${device}_${clean_base}"
           done
+
           cd firmware
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+          echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+          echo "status=success" >> "$GITHUB_OUTPUT"
           ls -lh
 
       - name: 上传整理后固件工件
@@ -267,7 +281,9 @@ jobs:
       - name: 编译后深度清理磁盘
         if: always()
         run: |
-          cd openwrt
-          rm -rf build_dir staging_dir tmp bin
+          if [ -d openwrt ]; then
+            cd openwrt
+            rm -rf build_dir staging_dir tmp bin
+          fi
           ccache -s || true
           df -h
