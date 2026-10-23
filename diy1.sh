@@ -28,6 +28,10 @@ git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/oaf
 # Disk Management (third-party)
 git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-app-diskman
 
+#smartdns
+git clone https://github.com/pymumu/luci-app-smartdns.git package/luci-app-smartdns
+git clone https://github.com/pymumu/openwrt-smartdns.git package/openwrt-smartdns
+
 echo "========================================="
 echo "DIY1 Finished"
 echo "========================================="
