@@ -56,14 +56,41 @@ clone_latest \
 # ==================================================
 # 3. PassWall
 # 保留 PassWall，不替换为 PassWall2
+#
+# 上游仓库内部目录：
+# luci-app-passwall/Makefile
+#
+# 将内部软件包内容复制到标准 package 目录
 # ==================================================
 clone_latest \
     https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
     package/openwrt-passwall-packages
 
+PASSWALL_SRC="package/luci-app-passwall-src"
+
 clone_latest \
     https://github.com/Openwrt-Passwall/openwrt-passwall.git \
-    package/luci-app-passwall
+    "$PASSWALL_SRC"
+
+if [ ! -f "$PASSWALL_SRC/luci-app-passwall/Makefile" ]; then
+    echo "ERROR：PassWall 上游目录结构不符合预期"
+    exit 1
+fi
+
+mkdir -p package/luci-app-passwall
+
+cp -a \
+    "$PASSWALL_SRC/luci-app-passwall/." \
+    package/luci-app-passwall/
+
+rm -rf "$PASSWALL_SRC"
+
+if [ ! -f package/luci-app-passwall/Makefile ]; then
+    echo "ERROR：PassWall Makefile 安装失败"
+    exit 1
+fi
+
+echo "PassWall 软件包安装检查通过"
 
 # ==================================================
 # 4. PowerOffDevice
