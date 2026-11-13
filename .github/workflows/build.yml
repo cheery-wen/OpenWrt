@@ -3,7 +3,7 @@ name: 编译官方 OpenWrt 25.12
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   repository_dispatch:
   workflow_dispatch:
     inputs:
@@ -18,7 +18,7 @@ on:
 
 # 版本统一配置区，后续升级仅修改这里即可
 env:
-  # OpenWrt官方源码地址
+  # OpenWrt 官方源码地址
   REPO_URL: https://github.com/openwrt/openwrt
   # 滚动开发分支
   REPO_BRANCH: openwrt-25.12
@@ -56,9 +56,6 @@ jobs:
             /opt/ghc \
             /usr/local/share/boost \
             /usr/local/lib/android \
-            /usr/local/lib/node_modules \
-            /opt/hostedtoolcache \
-            /usr/local/.ghcup \
             /usr/local/.cargo \
             /usr/local/lib/python3.* \
             /usr/local/aws-sam-cli \
@@ -78,28 +75,44 @@ jobs:
       - name: 检出仓库代码
         uses: actions/checkout@v5
 
-      - name: 初始化全局变量（根据运行选择自动适配）
-        run: |
-          sudo timedatectl set-timezone "$TZ"
-          echo "date1=$(date +'%Y.%m.%d-%H.%M')" >> $GITHUB_ENV
-          echo "date2=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
-          echo "date3=$(date '+%Y年%m月%d日')" >> $GITHUB_ENV
+      - name: 配置 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-          BUILD_MODE=${{ github.event.inputs.BUILD_MODE }}
+      - name: 初始化全局变量（根据运行选择自动适配）
+        env:
+          BUILD_MODE: ${{ github.event.inputs.BUILD_MODE || 'Stable' }}
+        run: |
+          set -euo pipefail
+
+          sudo timedatectl set-timezone "$TZ"
+
+          echo "date1=$(date +'%Y.%m.%d-%H.%M')" >> "$GITHUB_ENV"
+          echo "date2=$(date +'%Y.%m.%d')" >> "$GITHUB_ENV"
+          echo "date3=$(date '+%Y年%m月%d日')" >> "$GITHUB_ENV"
+
           if [[ "$BUILD_MODE" == "Stable" ]]; then
-            echo "CACHE_KEY=$REPO_TAG" >> $GITHUB_ENV
-            echo "OPENWRT_NAME=OpenWrt-${REPO_TAG}-Stable" >> $GITHUB_ENV
-            echo "USE_TAG=true" >> $GITHUB_ENV
+            echo "CACHE_KEY=$REPO_TAG" >> "$GITHUB_ENV"
+            echo "OPENWRT_NAME=OpenWrt-${REPO_TAG}-Stable" >> "$GITHUB_ENV"
+            echo "USE_TAG=true" >> "$GITHUB_ENV"
+          elif [[ "$BUILD_MODE" == "Snapshot" ]]; then
+            echo "CACHE_KEY=$REPO_BRANCH" >> "$GITHUB_ENV"
+            echo "OPENWRT_NAME=OpenWrt-${REPO_BRANCH}-Snapshot" >> "$GITHUB_ENV"
+            echo "USE_TAG=false" >> "$GITHUB_ENV"
           else
-            echo "CACHE_KEY=$REPO_BRANCH" >> $GITHUB_ENV
-            echo "OPENWRT_NAME=OpenWrt-${REPO_BRANCH}-Snapshot" >> $GITHUB_ENV
-            echo "USE_TAG=false" >> $GITHUB_ENV
+            echo "不支持的编译模式：$BUILD_MODE"
+            exit 1
           fi
+
+          echo "编译模式：$BUILD_MODE"
 
       - name: 安装编译依赖
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          set -euo pipefail
+
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install \
             ack antlr3 asciidoc autoconf automake autopoint \
@@ -114,7 +127,6 @@ jobs:
             libpython3-dev libreadline-dev \
             libssl-dev libtool \
             lrzsz msmtp ninja-build \
-            nodejs npm \
             p7zip p7zip-full patch pkgconf \
             python3 python3-pyelftools python3-setuptools \
             qemu-utils rsync scons squashfs-tools \
@@ -122,42 +134,63 @@ jobs:
             unzip upx wget xmlto xxd zlib1g-dev
 
           echo "==== 检查 Node.js 和 npm ===="
-          which node
           node --version
-          which npm
           npm --version
+
+          node -e "const v = process.versions.node.split('.')[0]; if (Number(v) < 20) process.exit(1)"
+          echo "Node.js 版本检查通过"
+
           df -h
 
-      - name: 克隆OpenWrt源码（修复Annotated Tag警告）
+      - name: 克隆 OpenWrt 源码
         run: |
-          git clone --depth 10 -b $REPO_BRANCH $REPO_URL openwrt
-          cd openwrt
-          git fetch origin tag $REPO_TAG
+          set -euo pipefail
 
-          if [[ "${USE_TAG}" == "true" ]]; then
-            git checkout tags/$REPO_TAG -B release-$REPO_TAG
-            echo "=== 当前编译固定稳定Tag: $REPO_TAG ==="
+          git clone --depth 10 -b "$REPO_BRANCH" "$REPO_URL" openwrt
+          cd openwrt
+
+          git fetch origin "refs/tags/$REPO_TAG:refs/tags/$REPO_TAG"
+
+          if [[ "$USE_TAG" == "true" ]]; then
+            git checkout "tags/$REPO_TAG" -B "release-$REPO_TAG"
+            echo "=== 当前编译固定稳定 Tag：$REPO_TAG ==="
           else
-            git checkout $REPO_BRANCH
-            echo "=== 当前编译滚动分支: $REPO_BRANCH ==="
+            git checkout "$REPO_BRANCH"
+            echo "=== 当前编译滚动分支：$REPO_BRANCH ==="
           fi
+
           echo "==== OpenWrt 版本信息 ===="
           cat include/version.mk
 
       - name: 初始化缓存目录
         run: |
+          set -euo pipefail
+
           mkdir -p openwrt/dl
-          mkdir -p "$GITHUB_WORKSPACE/.ccache"
-          ccache -M 2G
+          mkdir -p "$CCACHE_DIR"
+
+          ccache -M "$CCACHE_MAXSIZE"
           ccache -o compression=true
 
       - name: 首次自定义配置 diy1.sh
         run: |
+          set -euo pipefail
+
           cd openwrt
-          [ -f "../$FEEDS_CONF" ] && cp "../$FEEDS_CONF" ./
+
+          if [ -f "../$FEEDS_CONF" ]; then
+            cp "../$FEEDS_CONF" ./
+          else
+            echo "ERROR：未找到 $FEEDS_CONF"
+            exit 1
+          fi
+
           if [ -f "../$DIY1_SH" ]; then
             chmod +x "../$DIY1_SH"
             "../$DIY1_SH"
+          else
+            echo "ERROR：未找到 $DIY1_SH"
+            exit 1
           fi
 
       - name: 缓存 dl 下载包目录
@@ -178,45 +211,98 @@ jobs:
 
       - name: 更新 & 安装软件源 feeds
         run: |
+          set -euo pipefail
+
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 导入.config配置并执行 diy2.sh
+      - name: 导入 .config 配置并执行 diy2.sh
         run: |
-          [ -f "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
+          set -euo pipefail
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "ERROR：未找到 $CONFIG_FILE"
+            exit 1
+          fi
+
+          cp "$CONFIG_FILE" openwrt/.config
+
           cd openwrt
+
           if [ -f "../$DIY2_SH" ]; then
             chmod +x "../$DIY2_SH"
             "../$DIY2_SH"
+          else
+            echo "ERROR：未找到 $DIY2_SH"
+            exit 1
           fi
+
           make defconfig
+
+          echo "==== 检查关键配置 ===="
+          grep -E \
+            'CONFIG_TARGET_x86_64=y|CONFIG_TARGET_ROOTFS_PARTSIZE=512|CONFIG_TARGET_KERNEL_PARTSIZE=32|CONFIG_PACKAGE_luci-app-passwall=y' \
+            .config
 
       - name: 预下载全部源码包
         run: |
+          set -euo pipefail
+
           cd openwrt
-          make download -j$(nproc)
+
+          if ! make download -j"$(nproc)"; then
+            echo "并行下载失败，改用单线程重试"
+            make download -j1 V=s
+          fi
+
           find dl -size -1024c -exec ls -l {} \; -exec rm -f {} \;
-          make download -j$(nproc) || make download -j1 V=s
 
       - name: 编译固件
         id: compile
         run: |
+          set -uo pipefail
+
           export PATH="/usr/lib/ccache:$PATH"
-          export CCACHE_DIR="${{ github.workspace }}/.ccache"
+          export CCACHE_DIR="$CCACHE_DIR"
+
           ccache -z
           cd openwrt
+
           echo "使用 $(nproc) 线程编译"
-          make -j$(nproc) || make -j1 || make -j1 V=s
+
+          if make -j"$(nproc)" V=s 2>&1 | tee ../compile.log; then
+            echo "并行编译成功"
+          else
+            echo "并行编译失败，尝试单线程编译"
+
+            if make -j1 V=s 2>&1 | tee ../compile-single.log; then
+              echo "单线程编译成功"
+            else
+              echo "ERROR：编译失败"
+              exit 1
+            fi
+          fi
+
           ccache -s
-          echo "status=success" >> $GITHUB_OUTPUT
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            compile.log
+            compile-single.log
+          if-no-files-found: ignore
 
       - name: 检查磁盘占用
-        if: (!cancelled())
+        if: always()
         run: |
           df -hT
 
-      - name: 上传完整bin目录工件
+      - name: 上传完整 bin 目录工件
         if: steps.compile.outcome == 'success' && env.UPLOAD_BIN_DIR == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -227,36 +313,49 @@ jobs:
         id: organize
         if: steps.compile.outcome == 'success'
         run: |
+          set -euo pipefail
+
           mkdir -p firmware
+
           first_file=$(find openwrt/bin/targets \
-            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) | head -1)
+            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) |
+            head -n 1)
 
           if [ -z "$first_file" ]; then
-            echo "ERROR: 未找到固件镜像文件！"
+            echo "ERROR：未找到固件镜像文件！"
             exit 1
           fi
 
           target_dir=$(dirname "$first_file")
           parent=$(basename "$(dirname "$target_dir")")
           child=$(basename "$target_dir")
+
           device="${parent}_${child}"
           device=$(echo "$device" | sed 's/[^a-zA-Z0-9._-]/_/g')
 
           echo "DEVICE_NAME=$device" >> "$GITHUB_ENV"
-          cp openwrt/.config "firmware/${date1}_${OPENWRT_NAME}_${device}.config"
 
-          find openwrt/bin/targets \
-            -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \) |
-          while read -r file
-          do
+          cp openwrt/.config \
+            "firmware/${date1}_${OPENWRT_NAME}_${device}.config"
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+
             base=$(basename "$file")
             clean_base=$(echo "$base" | sed -E 's/^([^-]+-){3}//')
-            cp "$file" "firmware/${date1}_${OPENWRT_NAME}_${device}_${clean_base}"
-          done
+
+            cp "$file" \
+              "firmware/${date1}_${OPENWRT_NAME}_${device}_${clean_base}"
+          done < <(
+            find openwrt/bin/targets \
+              -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \)
+          )
 
           cd firmware
+
           echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
           echo "status=success" >> "$GITHUB_OUTPUT"
+
           ls -lh
 
       - name: 上传整理后固件工件
@@ -267,7 +366,7 @@ jobs:
           path: ${{ env.FIRMWARE }}
 
       - name: 自动发布 Release
-        if: steps.organize.outcome == 'success'
+        if: steps.organize.outcome == 'success' && env.UPLOAD_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -285,5 +384,6 @@ jobs:
             cd openwrt
             rm -rf build_dir staging_dir tmp bin
           fi
+
           ccache -s || true
           df -h
