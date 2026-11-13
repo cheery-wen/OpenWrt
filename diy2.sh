@@ -8,7 +8,6 @@ echo "========================================="
 
 # ==================================================
 # 1. 自适应网口
-# 保留原有规则：
 # 第一张网卡作为 WAN，其余网卡作为 LAN
 # 只有一张网卡时作为 LAN
 # ==================================================
@@ -133,7 +132,6 @@ GO_BRANCH="27.x"
 GO_PATH="feeds/packages/lang/golang"
 
 rm -rf "$GO_PATH"
-
 mkdir -p "$(dirname "$GO_PATH")"
 
 git clone --depth 1 \
@@ -164,27 +162,18 @@ grep -E 'GO_VERSION_MAJOR_MINOR|GO_VERSION_PATCH' "$GO_MAKEFILE"
 # package/openwrt-passwall-packages/smartdns
 # package/luci-app-smartdns
 #
-# 删除官方 feeds 中的重复版本，避免同名包冲突
+# 删除官方 feeds 中的重复版本
 # ==================================================
 echo "🔧 整理 SmartDNS 软件包来源"
 
 rm -rf feeds/packages/net/smartdns
 rm -rf feeds/luci/applications/luci-app-smartdns
 
-# 清理 feeds install 生成的对应链接或目录
 rm -rf package/feeds/packages/smartdns
 rm -rf package/feeds/luci/luci-app-smartdns
 
 # ==================================================
 # 7. SmartDNS 依赖检查
-#
-# 依赖关系：
-# luci-app-smartdns -> smartdns
-# luci-app-smartdns -> smartdns-ui（可选）
-# smartdns-ui -> smartdns
-#
-# smartdns-ui 依赖核心 smartdns，不构成循环依赖。
-# 保留上游 Makefile，不用正则强制改写。
 # ==================================================
 echo "🔧 检查 SmartDNS 依赖"
 
@@ -201,25 +190,21 @@ if [ ! -f "$SMARTDNS_UI_MK" ]; then
     exit 1
 fi
 
-# 检查核心软件包定义
 if ! grep -q 'Package/smartdns' "$SMARTDNS_CORE_MK"; then
     echo "ERROR：SmartDNS 核心包定义不存在"
     exit 1
 fi
 
-# 检查 WebUI 软件包定义
 if ! grep -q 'Package/smartdns-ui' "$SMARTDNS_CORE_MK"; then
     echo "ERROR：SmartDNS WebUI 包定义不存在"
     exit 1
 fi
 
-# WebUI 应依赖 SmartDNS 核心
 if ! grep -qE 'DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_CORE_MK"; then
     echo "ERROR：SmartDNS WebUI 未声明核心依赖"
     exit 1
 fi
 
-# LuCI 应依赖 SmartDNS 核心
 if ! grep -qE 'LUCI_DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_UI_MK"; then
     echo "ERROR：SmartDNS LuCI 未声明核心依赖"
     exit 1
@@ -228,13 +213,22 @@ fi
 echo "SmartDNS 核心、WebUI、LuCI 依赖检查通过"
 
 # ==================================================
-# 8. 检查关键软件包目录
+# 8. 检查第三方插件源码
 # ==================================================
-echo "🔍 检查关键软件包"
+echo "🔍 检查第三方插件源码"
 
 required_files=(
+    "package/luci-app-diskman/Makefile"
+    "package/parted/Makefile"
+    "package/luci-app-timecontrol/Makefile"
+
+    "package/oaf/oaf/Makefile"
+    "package/oaf/open-app-filter/Makefile"
+    "package/oaf/luci-app-oaf/Makefile"
+
     "package/openwrt-passwall-packages/smartdns/Makefile"
     "package/luci-app-smartdns/Makefile"
+
     "feeds/packages/lang/golang/golang/Makefile"
     "target/linux/x86/base-files/etc/board.d/02_network"
     "package/base-files/files/bin/config_generate"
@@ -248,40 +242,52 @@ for file in "${required_files[@]}"; do
     fi
 done
 
-echo "所有关键文件检查通过"
+echo "第三方插件源码检查通过"
 
 # ==================================================
 # 9. 检查 .config 中的关键配置
 # ==================================================
 echo "🔍 检查关键编译配置"
 
-if [ -f .config ]; then
-    required_config=(
-        "CONFIG_TARGET_x86_64=y"
-        "CONFIG_TARGET_x86_64_DEVICE_generic=y"
-        "CONFIG_GRUB_IMAGES=y"
-        "CONFIG_GRUB_EFI_IMAGES=y"
-        "CONFIG_TARGET_KERNEL_PARTSIZE=32"
-        "CONFIG_TARGET_ROOTFS_PARTSIZE=512"
-        "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
-        "CONFIG_PACKAGE_luci-app-passwall=y"
-        "CONFIG_PACKAGE_smartdns=y"
-        "CONFIG_PACKAGE_smartdns-ui=y"
-        "CONFIG_PACKAGE_luci-app-smartdns=y"
-    )
-
-    for item in "${required_config[@]}"; do
-        if ! grep -Fxq "$item" .config; then
-            echo "ERROR：缺少配置：$item"
-            exit 1
-        fi
-    done
-
-    echo ".config 关键配置检查通过"
-else
+if [ ! -f .config ]; then
     echo "ERROR：未找到 .config"
     exit 1
 fi
+
+required_config=(
+    "CONFIG_TARGET_x86=y"
+    "CONFIG_TARGET_x86_64=y"
+    "CONFIG_TARGET_x86_64_DEVICE_generic=y"
+
+    "CONFIG_GRUB_IMAGES=y"
+    "CONFIG_GRUB_EFI_IMAGES=y"
+    "CONFIG_TARGET_KERNEL_PARTSIZE=32"
+    "CONFIG_TARGET_ROOTFS_PARTSIZE=512"
+    "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
+
+    "CONFIG_PACKAGE_luci-app-passwall=y"
+
+    "CONFIG_PACKAGE_luci-app-diskman=y"
+    "CONFIG_PACKAGE_parted=y"
+    "CONFIG_PACKAGE_luci-app-timecontrol=y"
+
+    "CONFIG_PACKAGE_kmod-oaf=y"
+    "CONFIG_PACKAGE_appfilter=y"
+    "CONFIG_PACKAGE_luci-app-oaf=y"
+
+    "CONFIG_PACKAGE_smartdns=y"
+    "CONFIG_PACKAGE_smartdns-ui=y"
+    "CONFIG_PACKAGE_luci-app-smartdns=y"
+)
+
+for item in "${required_config[@]}"; do
+    if ! grep -Fxq "$item" .config; then
+        echo "ERROR：缺少配置：$item"
+        exit 1
+    fi
+done
+
+echo ".config 关键配置检查通过"
 
 # ==================================================
 # 完成
