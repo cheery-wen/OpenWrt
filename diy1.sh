@@ -42,10 +42,16 @@ clone_latest \
 
 # ==================================================
 # 2. Lucky
+#
+# 上游仓库包含两个软件包：
+# lucky/Makefile             -> lucky
+# luci-app-lucky/Makefile    -> luci-app-lucky
+#
+# 注意：必须克隆到 package/lucky
 # ==================================================
 clone_latest \
     https://github.com/gdy666/luci-app-lucky.git \
-    package/luci-app-lucky
+    package/lucky
 
 # ==================================================
 # 3. PassWall
@@ -149,6 +155,7 @@ rm -rf "$TIMECONTROL_SRC"
 
 # ==================================================
 # 9. SmartDNS
+#
 # SmartDNS 核心和 WebUI 使用 PassWall packages
 # LuCI 管理界面使用 pymumu 官方仓库
 # ==================================================
@@ -166,20 +173,32 @@ echo "========================================="
 required_files=(
     "package/luci-theme-argon/Makefile"
     "package/luci-app-argon-config/Makefile"
-    "package/luci-app-lucky/Makefile"
+
+    # Lucky：核心和 LuCI 界面
+    "package/lucky/lucky/Makefile"
+    "package/lucky/luci-app-lucky/Makefile"
+
+    # PassWall
     "package/openwrt-passwall-packages"
     "package/luci-app-passwall/Makefile"
+
+    # 其他插件
     "package/luci-app-poweroffdevice/Makefile"
     "package/luci-app-ghfu/Makefile"
 
+    # OpenAppFilter
     "package/oaf/oaf/Makefile"
     "package/oaf/open-app-filter/Makefile"
     "package/oaf/luci-app-oaf/Makefile"
 
+    # DiskMan
     "package/luci-app-diskman/Makefile"
     "package/parted/Makefile"
 
+    # TimeControl
     "package/luci-app-timecontrol/Makefile"
+
+    # SmartDNS LuCI
     "package/luci-app-smartdns/Makefile"
 )
 
@@ -190,7 +209,9 @@ for file in "${required_files[@]}"; do
     fi
 done
 
-# SmartDNS 核心包检查
+# ==================================================
+# 11. SmartDNS 核心检查
+# ==================================================
 if [ ! -f "package/openwrt-passwall-packages/smartdns/Makefile" ]; then
     echo "ERROR：未找到 PassWall packages 中的 SmartDNS"
     exit 1
