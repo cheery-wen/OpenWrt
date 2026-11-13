@@ -2,13 +2,10 @@
 name: 编译官方 OpenWrt 25.12
 
 on:
-  push:
-    branches: [ main ]
-  repository_dispatch:
   workflow_dispatch:
     inputs:
       BUILD_MODE:
-        description: 编译模式（无需修改yml，运行时选择）
+        description: 编译模式（手动选择）
         type: choice
         required: true
         default: Stable
@@ -16,17 +13,16 @@ on:
           - Stable
           - Snapshot
 
-# 版本统一配置区，后续升级仅修改这里即可
+# ==================================================
+# 版本统一配置区
+# ==================================================
 env:
-  # OpenWrt 官方源码地址
+  # OpenWrt 官方源码
   REPO_URL: https://github.com/openwrt/openwrt
-  # 滚动开发分支
   REPO_BRANCH: openwrt-25.12
-  # 固定稳定版标签
   REPO_TAG: v25.12.6
 
   CONFIG_FILE: .config
-  FEEDS_CONF: feeds.conf.default
   DIY1_SH: diy1.sh
   DIY2_SH: diy2.sh
 
@@ -43,14 +39,20 @@ jobs:
   build:
     name: 编译任务
     runs-on: ubuntu-24.04
+
     permissions:
       contents: write
 
     steps:
+
+      # ==================================================
+      # 1. 释放系统空间
+      # ==================================================
       - name: 释放系统最大可用空间
         run: |
           sudo apt-get clean
           docker system prune -af || true
+
           sudo rm -rf \
             /usr/share/dotnet \
             /opt/ghc \
@@ -70,17 +72,27 @@ jobs:
             /var/lib/gems \
             /opt/pipx \
             /opt/amazon || true
+
           df -h
 
+      # ==================================================
+      # 2. 检出仓库
+      # ==================================================
       - name: 检出仓库代码
         uses: actions/checkout@v5
 
+      # ==================================================
+      # 3. Node.js
+      # ==================================================
       - name: 配置 Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: 初始化全局变量（根据运行选择自动适配）
+      # ==================================================
+      # 4. 初始化全局变量
+      # ==================================================
+      - name: 初始化全局变量
         env:
           BUILD_MODE: ${{ github.event.inputs.BUILD_MODE || 'Stable' }}
         run: |
@@ -96,10 +108,12 @@ jobs:
             echo "CACHE_KEY=$REPO_TAG" >> "$GITHUB_ENV"
             echo "OPENWRT_NAME=OpenWrt-${REPO_TAG}-Stable" >> "$GITHUB_ENV"
             echo "USE_TAG=true" >> "$GITHUB_ENV"
+
           elif [[ "$BUILD_MODE" == "Snapshot" ]]; then
             echo "CACHE_KEY=$REPO_BRANCH" >> "$GITHUB_ENV"
             echo "OPENWRT_NAME=OpenWrt-${REPO_BRANCH}-Snapshot" >> "$GITHUB_ENV"
             echo "USE_TAG=false" >> "$GITHUB_ENV"
+
           else
             echo "不支持的编译模式：$BUILD_MODE"
             exit 1
@@ -107,6 +121,9 @@ jobs:
 
           echo "编译模式：$BUILD_MODE"
 
+      # ==================================================
+      # 5. 安装编译依赖
+      # ==================================================
       - name: 安装编译依赖
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -114,6 +131,7 @@ jobs:
           set -euo pipefail
 
           sudo -E apt-get -qq update
+
           sudo -E apt-get -qq install \
             ack antlr3 asciidoc autoconf automake autopoint \
             binutils bison build-essential \
@@ -134,34 +152,51 @@ jobs:
             unzip upx wget xmlto xxd zlib1g-dev
 
           echo "==== 检查 Node.js 和 npm ===="
+
           node --version
           npm --version
 
           node -e "const v = process.versions.node.split('.')[0]; if (Number(v) < 20) process.exit(1)"
+
           echo "Node.js 版本检查通过"
 
           df -h
 
-      - name: 克隆 OpenWrt 源码
+      # ==================================================
+      # 6. 克隆 OpenWrt 官方源码
+      # ==================================================
+      - name: 克隆 OpenWrt 官方源码
         run: |
           set -euo pipefail
 
           git clone --depth 10 -b "$REPO_BRANCH" "$REPO_URL" openwrt
+
           cd openwrt
 
           git fetch origin "refs/tags/$REPO_TAG:refs/tags/$REPO_TAG"
 
           if [[ "$USE_TAG" == "true" ]]; then
             git checkout "tags/$REPO_TAG" -B "release-$REPO_TAG"
+
             echo "=== 当前编译固定稳定 Tag：$REPO_TAG ==="
+
           else
             git checkout "$REPO_BRANCH"
+
             echo "=== 当前编译滚动分支：$REPO_BRANCH ==="
           fi
 
           echo "==== OpenWrt 版本信息 ===="
+
           cat include/version.mk
 
+          echo "==== 使用官方 feeds.conf.default ===="
+
+          cat feeds.conf.default
+
+      # ==================================================
+      # 7. 初始化缓存
+      # ==================================================
       - name: 初始化缓存目录
         run: |
           set -euo pipefail
@@ -172,13 +207,14 @@ jobs:
           ccache -M "$CCACHE_MAXSIZE"
           ccache -o compression=true
 
+      # ==================================================
+      # 8. DIY1
+      # ==================================================
       - name: 首次自定义配置 diy1.sh
         run: |
           set -euo pipefail
 
           cd openwrt
-
-        
 
           if [ -f "../$DIY1_SH" ]; then
             chmod +x "../$DIY1_SH"
@@ -188,6 +224,9 @@ jobs:
             exit 1
           fi
 
+      # ==================================================
+      # 9. 缓存下载目录
+      # ==================================================
       - name: 缓存 dl 下载包目录
         uses: actions/cache@v5
         with:
@@ -196,6 +235,9 @@ jobs:
           restore-keys: |
             dl-${{ runner.os }}-
 
+      # ==================================================
+      # 10. 缓存 ccache
+      # ==================================================
       - name: 缓存 ccache 编译缓存
         uses: actions/cache@v5
         with:
@@ -204,14 +246,21 @@ jobs:
           restore-keys: |
             ccache-${{ runner.os }}-
 
-      - name: 更新 & 安装软件源 feeds
+      # ==================================================
+      # 11. 更新和安装官方 feeds
+      # ==================================================
+      - name: 更新 & 安装官方软件源 feeds
         run: |
           set -euo pipefail
 
           cd openwrt
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # ==================================================
+      # 12. 导入配置并执行 DIY2
+      # ==================================================
       - name: 导入 .config 配置并执行 diy2.sh
         run: |
           set -euo pipefail
@@ -236,10 +285,14 @@ jobs:
           make defconfig
 
           echo "==== 检查关键配置 ===="
+
           grep -E \
             'CONFIG_TARGET_x86_64=y|CONFIG_TARGET_ROOTFS_PARTSIZE=512|CONFIG_TARGET_KERNEL_PARTSIZE=32|CONFIG_PACKAGE_luci-app-passwall=y' \
             .config
 
+      # ==================================================
+      # 13. 预下载源码包
+      # ==================================================
       - name: 预下载全部源码包
         run: |
           set -euo pipefail
@@ -253,6 +306,9 @@ jobs:
 
           find dl -size -1024c -exec ls -l {} \; -exec rm -f {} \;
 
+      # ==================================================
+      # 14. 编译固件
+      # ==================================================
       - name: 编译固件
         id: compile
         run: |
@@ -262,17 +318,20 @@ jobs:
           export CCACHE_DIR="$CCACHE_DIR"
 
           ccache -z
+
           cd openwrt
 
           echo "使用 $(nproc) 线程编译"
 
           if make -j"$(nproc)" V=s 2>&1 | tee ../compile.log; then
             echo "并行编译成功"
+
           else
             echo "并行编译失败，尝试单线程编译"
 
             if make -j1 V=s 2>&1 | tee ../compile-single.log; then
               echo "单线程编译成功"
+
             else
               echo "ERROR：编译失败"
               exit 1
@@ -280,8 +339,12 @@ jobs:
           fi
 
           ccache -s
+
           echo "status=success" >> "$GITHUB_OUTPUT"
 
+      # ==================================================
+      # 15. 上传编译日志
+      # ==================================================
       - name: 上传编译日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -292,11 +355,17 @@ jobs:
             compile-single.log
           if-no-files-found: ignore
 
+      # ==================================================
+      # 16. 检查磁盘
+      # ==================================================
       - name: 检查磁盘占用
         if: always()
         run: |
           df -hT
 
+      # ==================================================
+      # 17. 上传完整 bin 目录
+      # ==================================================
       - name: 上传完整 bin 目录工件
         if: steps.compile.outcome == 'success' && env.UPLOAD_BIN_DIR == 'true'
         uses: actions/upload-artifact@v4
@@ -304,6 +373,9 @@ jobs:
           name: bin_${{ env.OPENWRT_NAME }}_${{ env.date1 }}
           path: openwrt/bin
 
+      # ==================================================
+      # 18. 整理固件镜像
+      # ==================================================
       - name: 整理固件镜像文件
         id: organize
         if: steps.compile.outcome == 'success'
@@ -322,10 +394,12 @@ jobs:
           fi
 
           target_dir=$(dirname "$first_file")
+
           parent=$(basename "$(dirname "$target_dir")")
           child=$(basename "$target_dir")
 
           device="${parent}_${child}"
+
           device=$(echo "$device" | sed 's/[^a-zA-Z0-9._-]/_/g')
 
           echo "DEVICE_NAME=$device" >> "$GITHUB_ENV"
@@ -337,10 +411,12 @@ jobs:
             [ -n "$file" ] || continue
 
             base=$(basename "$file")
+
             clean_base=$(echo "$base" | sed -E 's/^([^-]+-){3}//')
 
             cp "$file" \
               "firmware/${date1}_${OPENWRT_NAME}_${device}_${clean_base}"
+
           done < <(
             find openwrt/bin/targets \
               -type f \( -name "*sysupgrade*" -o -name "*factory*" -o -name "*combined*" \)
@@ -353,6 +429,9 @@ jobs:
 
           ls -lh
 
+      # ==================================================
+      # 19. 上传整理后的固件
+      # ==================================================
       - name: 上传整理后固件工件
         if: steps.organize.outcome == 'success' && env.UPLOAD_FIRMWARE == 'true'
         uses: actions/upload-artifact@v4
@@ -360,6 +439,9 @@ jobs:
           name: firmware_${{ env.OPENWRT_NAME }}_${{ env.DEVICE_NAME }}_${{ env.date1 }}
           path: ${{ env.FIRMWARE }}
 
+      # ==================================================
+      # 20. 自动发布 Release
+      # ==================================================
       - name: 自动发布 Release
         if: steps.organize.outcome == 'success' && env.UPLOAD_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
@@ -372,6 +454,9 @@ jobs:
           draft: false
           prerelease: false
 
+      # ==================================================
+      # 21. 编译后清理
+      # ==================================================
       - name: 编译后深度清理磁盘
         if: always()
         run: |
@@ -381,4 +466,5 @@ jobs:
           fi
 
           ccache -s || true
+
           df -h
