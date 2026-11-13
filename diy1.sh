@@ -60,7 +60,7 @@ clone_latest \
 # 上游仓库内部目录：
 # luci-app-passwall/Makefile
 #
-# 将内部软件包内容复制到标准 package 目录
+# 复制内部软件包内容到标准 package 目录
 # ==================================================
 clone_latest \
     https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
@@ -94,10 +94,37 @@ echo "PassWall 软件包安装检查通过"
 
 # ==================================================
 # 4. PowerOffDevice
+#
+# 上游仓库内层目录才是 OpenWrt package：
+# luci-app-poweroffdevice/Makefile
+#
+# 复制内部软件包到标准 package 目录
 # ==================================================
+POWEROFF_SRC="package/luci-app-poweroffdevice-src"
+
 clone_latest \
     https://github.com/sirpdboy/luci-app-poweroffdevice.git \
-    package/luci-app-poweroffdevice
+    "$POWEROFF_SRC"
+
+if [ ! -f "$POWEROFF_SRC/luci-app-poweroffdevice/Makefile" ]; then
+    echo "ERROR：PowerOffDevice 上游目录结构不符合预期"
+    exit 1
+fi
+
+mkdir -p package/luci-app-poweroffdevice
+
+cp -a \
+    "$POWEROFF_SRC/luci-app-poweroffdevice/." \
+    package/luci-app-poweroffdevice/
+
+rm -rf "$POWEROFF_SRC"
+
+if [ ! -f package/luci-app-poweroffdevice/Makefile ]; then
+    echo "ERROR：PowerOffDevice Makefile 安装失败"
+    exit 1
+fi
+
+echo "PowerOffDevice 软件包安装检查通过"
 
 # ==================================================
 # 5. GHFU
@@ -209,8 +236,10 @@ required_files=(
     "package/openwrt-passwall-packages"
     "package/luci-app-passwall/Makefile"
 
-    # 其他插件
+    # PowerOffDevice
     "package/luci-app-poweroffdevice/Makefile"
+
+    # GHFU
     "package/luci-app-ghfu/Makefile"
 
     # OpenAppFilter
