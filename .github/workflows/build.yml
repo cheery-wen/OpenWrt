@@ -178,12 +178,7 @@ jobs:
 
           cd openwrt
 
-          if [ -f "../$FEEDS_CONF" ]; then
-            cp "../$FEEDS_CONF" ./
-          else
-            echo "ERROR：未找到 $FEEDS_CONF"
-            exit 1
-          fi
+        
 
           if [ -f "../$DIY1_SH" ]; then
             chmod +x "../$DIY1_SH"
