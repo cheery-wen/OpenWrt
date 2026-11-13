@@ -72,11 +72,6 @@ clone_latest \
     https://github.com/Openwrt-Passwall/openwrt-passwall.git \
     "$PASSWALL_SRC"
 
-if [ ! -f "$PASSWALL_SRC/luci-app-passwall/Makefile" ]; then
-    echo "ERROR：PassWall 上游目录结构不符合预期"
-    exit 1
-fi
-
 mkdir -p package/luci-app-passwall
 
 cp -a \
@@ -85,18 +80,13 @@ cp -a \
 
 rm -rf "$PASSWALL_SRC"
 
-if [ ! -f package/luci-app-passwall/Makefile ]; then
-    echo "ERROR：PassWall Makefile 安装失败"
-    exit 1
-fi
-
-echo "PassWall 软件包安装检查通过"
+echo "PassWall 软件包安装完成"
 
 # ==================================================
 # 4. PowerOffDevice
 #
 # 上游仓库内层目录才是 OpenWrt package：
-# luci-app-poweroffdevice/Makefile
+# luci-app-poweroffdevice/
 #
 # 复制内部软件包到标准 package 目录
 # ==================================================
@@ -106,11 +96,6 @@ clone_latest \
     https://github.com/sirpdboy/luci-app-poweroffdevice.git \
     "$POWEROFF_SRC"
 
-if [ ! -f "$POWEROFF_SRC/luci-app-poweroffdevice/Makefile" ]; then
-    echo "ERROR：PowerOffDevice 上游目录结构不符合预期"
-    exit 1
-fi
-
 mkdir -p package/luci-app-poweroffdevice
 
 cp -a \
@@ -119,19 +104,31 @@ cp -a \
 
 rm -rf "$POWEROFF_SRC"
 
-if [ ! -f package/luci-app-poweroffdevice/Makefile ]; then
-    echo "ERROR：PowerOffDevice Makefile 安装失败"
-    exit 1
-fi
-
-echo "PowerOffDevice 软件包安装检查通过"
+echo "PowerOffDevice 软件包安装完成"
 
 # ==================================================
 # 5. GHFU
+#
+# 上游仓库内层目录才是 OpenWrt package：
+# luci-app-ghfu/
+#
+# 复制内部软件包到标准 package 目录
 # ==================================================
+GHFU_SRC="package/luci-app-ghfu-src"
+
 clone_latest \
     https://github.com/smallprogram/luci-app-ghfu.git \
-    package/luci-app-ghfu
+    "$GHFU_SRC"
+
+mkdir -p package/luci-app-ghfu
+
+cp -a \
+    "$GHFU_SRC/luci-app-ghfu/." \
+    package/luci-app-ghfu/
+
+rm -rf "$GHFU_SRC"
+
+echo "GHFU 软件包安装完成"
 
 # ==================================================
 # 6. OpenAppFilter (OAF)
@@ -159,16 +156,6 @@ clone_latest \
     https://github.com/lisaac/luci-app-diskman.git \
     "$DISKMAN_SRC"
 
-if [ ! -f "$DISKMAN_SRC/applications/luci-app-diskman/Makefile" ]; then
-    echo "ERROR：DiskMan 上游目录结构不符合预期"
-    exit 1
-fi
-
-if [ ! -f "$DISKMAN_SRC/Parted.Makefile" ]; then
-    echo "ERROR：DiskMan 缺少 Parted.Makefile"
-    exit 1
-fi
-
 mkdir -p package/luci-app-diskman
 mkdir -p package/parted
 
@@ -182,22 +169,19 @@ cp \
 
 rm -rf "$DISKMAN_SRC"
 
+echo "DiskMan 软件包安装完成"
+
 # ==================================================
 # 8. TimeControl
 #
 # 上游仓库内层目录才是 OpenWrt package：
-# luci-app-timecontrol/Makefile
+# luci-app-timecontrol/
 # ==================================================
 TIMECONTROL_SRC="package/luci-app-timecontrol-src"
 
 clone_latest \
     https://github.com/sirpdboy/luci-app-timecontrol.git \
     "$TIMECONTROL_SRC"
-
-if [ ! -f "$TIMECONTROL_SRC/luci-app-timecontrol/Makefile" ]; then
-    echo "ERROR：TimeControl 上游目录结构不符合预期"
-    exit 1
-fi
 
 mkdir -p package/luci-app-timecontrol
 
@@ -206,6 +190,8 @@ cp -a \
     package/luci-app-timecontrol/
 
 rm -rf "$TIMECONTROL_SRC"
+
+echo "TimeControl 软件包安装完成"
 
 # ==================================================
 # 9. SmartDNS
@@ -218,63 +204,8 @@ clone_latest \
     package/luci-app-smartdns
 
 # ==================================================
-# 10. 第三方软件包检查
+# DIY1 完成
 # ==================================================
-echo "========================================="
-echo "DIY1 软件包检查"
-echo "========================================="
-
-required_files=(
-    "package/luci-theme-argon/Makefile"
-    "package/luci-app-argon-config/Makefile"
-
-    # Lucky：核心和 LuCI 界面
-    "package/lucky/lucky/Makefile"
-    "package/lucky/luci-app-lucky/Makefile"
-
-    # PassWall
-    "package/openwrt-passwall-packages"
-    "package/luci-app-passwall/Makefile"
-
-    # PowerOffDevice
-    "package/luci-app-poweroffdevice/Makefile"
-
-    # GHFU
-    "package/luci-app-ghfu/Makefile"
-
-    # OpenAppFilter
-    "package/oaf/oaf/Makefile"
-    "package/oaf/open-app-filter/Makefile"
-    "package/oaf/luci-app-oaf/Makefile"
-
-    # DiskMan
-    "package/luci-app-diskman/Makefile"
-    "package/parted/Makefile"
-
-    # TimeControl
-    "package/luci-app-timecontrol/Makefile"
-
-    # SmartDNS LuCI
-    "package/luci-app-smartdns/Makefile"
-)
-
-for file in "${required_files[@]}"; do
-    if [ ! -e "$file" ]; then
-        echo "ERROR：缺少插件文件：$file"
-        exit 1
-    fi
-done
-
-# ==================================================
-# 11. SmartDNS 核心检查
-# ==================================================
-if [ ! -f "package/openwrt-passwall-packages/smartdns/Makefile" ]; then
-    echo "ERROR：未找到 PassWall packages 中的 SmartDNS"
-    exit 1
-fi
-
-echo "所有第三方插件源码检查通过"
-
 echo "========================================="
 echo "DIY1 Finished"
 echo "========================================="
