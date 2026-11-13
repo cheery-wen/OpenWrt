@@ -1,15 +1,23 @@
-#!/bin/bash
-set -e
 
+#!/bin/bash
+set -euo pipefail
+
+echo "========================================="
 echo "🚀 OpenWrt 25.12 DIY2 开始"
+echo "========================================="
 
 # ==================================================
 # 1. 自适应网口
+# 保留原有规则：
+# 第一张网卡作为 WAN，其余网卡作为 LAN
+# 只有一张网卡时作为 LAN
 # ==================================================
+echo "🔧 配置 x86 自适应网口"
+
 BOARD_D_PATH="target/linux/x86/base-files/etc/board.d"
 mkdir -p "$BOARD_D_PATH"
 
-cat > "$BOARD_D_PATH/02_network" << "EOF"
+cat > "$BOARD_D_PATH/02_network" << 'EOF'
 #!/bin/sh
 
 . /lib/functions.sh
@@ -17,39 +25,78 @@ cat > "$BOARD_D_PATH/02_network" << "EOF"
 
 board_config_update
 
-ALL_ETH=$(ls /sys/class/net/ 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V)
-COUNT=$(echo "$ALL_ETH" | wc -l)
+ALL_ETH=$(ls /sys/class/net/ 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V || true)
+
+if [ -n "$ALL_ETH" ]; then
+    COUNT=$(printf '%s\n' "$ALL_ETH" | wc -l)
+else
+    COUNT=0
+fi
 
 if [ "$COUNT" -ge 2 ]; then
-    WAN_PORT=$(echo "$ALL_ETH" | head -n1)
-    LAN_PORTS=$(echo "$ALL_ETH" | tail -n +2 | tr '\n' ' ')
+    WAN_PORT=$(printf '%s\n' "$ALL_ETH" | head -n 1)
+    LAN_PORTS=$(printf '%s\n' "$ALL_ETH" | tail -n +2 | tr '\n' ' ')
+
     ucidef_set_interfaces_lan_wan "$LAN_PORTS" "$WAN_PORT"
+
 elif [ "$COUNT" -eq 1 ]; then
     ucidef_set_interface_lan "$ALL_ETH"
+
+else
+    echo "No eth interfaces found"
 fi
 
 board_config_flush
+
 exit 0
 EOF
 
 chmod +x "$BOARD_D_PATH/02_network"
 
+if [ ! -x "$BOARD_D_PATH/02_network" ]; then
+    echo "ERROR：网口配置文件创建失败"
+    exit 1
+fi
+
+echo "网口配置文件检查通过"
+
 # ==================================================
 # 2. 默认 LAN IP
 # ==================================================
-echo "⚙️ 设置 LAN IP -> 192.168.5.1"
+echo "⚙️ 设置默认 LAN IP -> 192.168.5.1"
 
-sed -i 's/192.168.1.1/192.168.5.1/g' \
-    package/base-files/files/bin/config_generate || true
+LAN_CONFIG="package/base-files/files/bin/config_generate"
+
+if [ ! -f "$LAN_CONFIG" ]; then
+    echo "ERROR：未找到 LAN 配置文件：$LAN_CONFIG"
+    exit 1
+fi
+
+if grep -q '192\.168\.1\.1' "$LAN_CONFIG"; then
+    sed -i 's/192\.168\.1\.1/192.168.5.1/g' "$LAN_CONFIG"
+elif grep -q '192\.168\.5\.1' "$LAN_CONFIG"; then
+    echo "LAN IP 已经是 192.168.5.1"
+else
+    echo "ERROR：未找到预期的默认 LAN IP，停止修改"
+    exit 1
+fi
+
+if ! grep -q '192\.168\.5\.1' "$LAN_CONFIG"; then
+    echo "ERROR：LAN IP 修改验证失败"
+    exit 1
+fi
+
+echo "LAN IP 检查通过"
 
 # ==================================================
 # 3. 默认时区
 # ==================================================
 echo "🕒 设置 Asia/Shanghai 时区"
 
-mkdir -p package/base-files/files/etc/uci-defaults
+TIMEZONE_DIR="package/base-files/files/etc/uci-defaults"
+mkdir -p "$TIMEZONE_DIR"
 
-cat > package/base-files/files/etc/uci-defaults/99-timezone << "EOF"
+cat > "$TIMEZONE_DIR/99-timezone" << 'EOF'
 #!/bin/sh
 
 uci set system.@system[0].timezone='CST-8'
@@ -59,121 +106,186 @@ uci commit system
 exit 0
 EOF
 
-chmod +x package/base-files/files/etc/uci-defaults/99-timezone
+chmod +x "$TIMEZONE_DIR/99-timezone"
+
+if [ ! -x "$TIMEZONE_DIR/99-timezone" ]; then
+    echo "ERROR：时区配置文件创建失败"
+    exit 1
+fi
+
+echo "时区配置检查通过"
 
 # ==================================================
 # 4. 清理 Go Cache
 # ==================================================
-echo "🗑️ 清理 Go 缓存"
+echo "🗑️ 清理 Go 模块缓存"
 
-rm -rf dl/go-mod-cache 2>/dev/null || true
+rm -rf dl/go-mod-cache
 
 # ==================================================
 # 5. 替换 Golang 27.x
+# 获取 27.x 分支最新代码，不固定提交版本
 # ==================================================
-echo "🔥 替换 Golang 27.x"
+echo "🔥 配置 Golang 27.x"
 
-rm -rf feeds/packages/lang/golang 2>/dev/null || true
+GO_REPO="https://github.com/sbwml/packages_lang_golang"
+GO_BRANCH="27.x"
+GO_PATH="feeds/packages/lang/golang"
 
-git clone https://github.com/sbwml/packages_lang_golang \
-    -b 27.x \
-    feeds/packages/lang/golang
+rm -rf "$GO_PATH"
+
+mkdir -p "$(dirname "$GO_PATH")"
+
+git clone --depth 1 \
+    --branch "$GO_BRANCH" \
+    "$GO_REPO" \
+    "$GO_PATH"
+
+GO_MAKEFILE="$GO_PATH/golang/Makefile"
+
+if [ ! -f "$GO_MAKEFILE" ]; then
+    echo "ERROR：未找到 Golang Makefile"
+    exit 1
+fi
+
+if ! grep -qE '^GO_VERSION_MAJOR_MINOR:=1\.27([[:space:]]|$)' "$GO_MAKEFILE"; then
+    echo "ERROR：Golang 仓库版本不是预期的 1.27 系列"
+    grep -E 'GO_VERSION_MAJOR_MINOR|GO_VERSION_PATCH' "$GO_MAKEFILE" || true
+    exit 1
+fi
+
+echo "Golang 27.x 检查通过"
+grep -E 'GO_VERSION_MAJOR_MINOR|GO_VERSION_PATCH' "$GO_MAKEFILE"
 
 # ==================================================
 # 6. SmartDNS：清理官方重复软件包
-# ==================================================
-echo "🔧 整理 SmartDNS 软件包来源"
-
+#
 # 保留：
 # package/openwrt-passwall-packages/smartdns
 # package/luci-app-smartdns
 #
-# 删除官方 feeds 中的重复版本，避免同名软件包冲突。
+# 删除官方 feeds 中的重复版本，避免同名包冲突
+# ==================================================
+echo "🔧 整理 SmartDNS 软件包来源"
+
 rm -rf feeds/packages/net/smartdns
 rm -rf feeds/luci/applications/luci-app-smartdns
 
-# 如果 feeds install 已创建对应链接，也清理这些链接。
+# 清理 feeds install 生成的对应链接或目录
 rm -rf package/feeds/packages/smartdns
 rm -rf package/feeds/luci/luci-app-smartdns
 
 # ==================================================
-# 7. 修正 SmartDNS LuCI 的可选 UI 依赖
+# 7. SmartDNS 依赖检查
+#
+# 依赖关系：
+# luci-app-smartdns -> smartdns
+# luci-app-smartdns -> smartdns-ui（可选）
+# smartdns-ui -> smartdns
+#
+# smartdns-ui 依赖核心 smartdns，不构成循环依赖。
+# 保留上游 Makefile，不用正则强制改写。
 # ==================================================
-echo "🔧 检查 SmartDNS LuCI 依赖"
+echo "🔧 检查 SmartDNS 依赖"
 
-SMARTDNS_LUCI_MK="package/luci-app-smartdns/Makefile"
+SMARTDNS_CORE_MK="package/openwrt-passwall-packages/smartdns/Makefile"
+SMARTDNS_UI_MK="package/luci-app-smartdns/Makefile"
 
-if [ -f "$SMARTDNS_LUCI_MK" ]; then
-    python3 - "$SMARTDNS_LUCI_MK" <<'PY'
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-content = path.read_text()
-
-# 移除可选 smartdns-ui 的 Kconfig 配置块。
-# smartdns-ui 独立由 .config 选择，不再通过 LuCI 包的选项选择，
-# 避免 PACKAGE_luci-app-smartdns 与 PACKAGE_smartdns-ui 的循环依赖。
-content_new, config_count = re.subn(
-    r"(?ms)^define Package/\$\(PKG_NAME\)/config\s*\n.*?^endef[ \t]*\n?",
-    "",
-    content,
-    count=1,
-)
-
-# 将 LuCI 依赖固定为 luci-base 和 smartdns。
-# smartdns-ui 如需安装，由 .config 单独选择。
-content_new, dep_count = re.subn(
-    r"(?m)^LUCI_DEPENDS:=.*(?:\\\n[ \t]*\+PACKAGE_\$\(PKG_NAME\)_INCLUDE_smartdns_ui:smartdns-ui)?[ \t]*$",
-    "LUCI_DEPENDS:=+luci-base +smartdns",
-    content_new,
-    count=1,
-)
-
-if dep_count == 0:
-    if "LUCI_DEPENDS:=+luci-base +smartdns" not in content_new:
-        print("ERROR: 未找到可识别的 LUCI_DEPENDS 配置，未写入修改。")
-        sys.exit(1)
-
-if config_count == 0 and "INCLUDE_smartdns_ui" in content_new:
-    print("ERROR: 未能移除 SmartDNS 的可选 UI 配置块。")
-    sys.exit(1)
-
-path.write_text(content_new)
-
-print("SmartDNS LuCI Makefile 检查完成")
-print("移除可选 UI 配置块：", config_count)
-print("依赖配置处理次数：", dep_count)
-PY
-else
-    echo "❌ 未找到 $SMARTDNS_LUCI_MK"
+if [ ! -f "$SMARTDNS_CORE_MK" ]; then
+    echo "ERROR：未找到 PassWall packages 中的 SmartDNS Makefile"
     exit 1
 fi
 
+if [ ! -f "$SMARTDNS_UI_MK" ]; then
+    echo "ERROR：未找到 luci-app-smartdns Makefile"
+    exit 1
+fi
+
+# 检查核心软件包定义
+if ! grep -q 'Package/smartdns' "$SMARTDNS_CORE_MK"; then
+    echo "ERROR：SmartDNS 核心包定义不存在"
+    exit 1
+fi
+
+# 检查 WebUI 软件包定义
+if ! grep -q 'Package/smartdns-ui' "$SMARTDNS_CORE_MK"; then
+    echo "ERROR：SmartDNS WebUI 包定义不存在"
+    exit 1
+fi
+
+# WebUI 应依赖 SmartDNS 核心
+if ! grep -qE 'DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_CORE_MK"; then
+    echo "ERROR：SmartDNS WebUI 未声明核心依赖"
+    exit 1
+fi
+
+# LuCI 应依赖 SmartDNS 核心
+if ! grep -qE 'LUCI_DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_UI_MK"; then
+    echo "ERROR：SmartDNS LuCI 未声明核心依赖"
+    exit 1
+fi
+
+echo "SmartDNS 核心、WebUI、LuCI 依赖检查通过"
+
 # ==================================================
-# 8. 检查关键软件包
+# 8. 检查关键软件包目录
 # ==================================================
 echo "🔍 检查关键软件包"
 
-if [ ! -f package/openwrt-passwall-packages/smartdns/Makefile ]; then
-    echo "❌ 未找到 PassWall packages 中的 SmartDNS Makefile"
+required_files=(
+    "package/openwrt-passwall-packages/smartdns/Makefile"
+    "package/luci-app-smartdns/Makefile"
+    "feeds/packages/lang/golang/golang/Makefile"
+    "target/linux/x86/base-files/etc/board.d/02_network"
+    "package/base-files/files/bin/config_generate"
+    "package/base-files/files/etc/uci-defaults/99-timezone"
+)
+
+for file in "${required_files[@]}"; do
+    if [ ! -f "$file" ]; then
+        echo "ERROR：缺少关键文件：$file"
+        exit 1
+    fi
+done
+
+echo "所有关键文件检查通过"
+
+# ==================================================
+# 9. 检查 .config 中的关键配置
+# ==================================================
+echo "🔍 检查关键编译配置"
+
+if [ -f .config ]; then
+    required_config=(
+        "CONFIG_TARGET_x86_64=y"
+        "CONFIG_TARGET_x86_64_DEVICE_generic=y"
+        "CONFIG_GRUB_IMAGES=y"
+        "CONFIG_GRUB_EFI_IMAGES=y"
+        "CONFIG_TARGET_KERNEL_PARTSIZE=32"
+        "CONFIG_TARGET_ROOTFS_PARTSIZE=512"
+        "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
+        "CONFIG_PACKAGE_luci-app-passwall=y"
+        "CONFIG_PACKAGE_smartdns=y"
+        "CONFIG_PACKAGE_smartdns-ui=y"
+        "CONFIG_PACKAGE_luci-app-smartdns=y"
+    )
+
+    for item in "${required_config[@]}"; do
+        if ! grep -Fxq "$item" .config; then
+            echo "ERROR：缺少配置：$item"
+            exit 1
+        fi
+    done
+
+    echo ".config 关键配置检查通过"
+else
+    echo "ERROR：未找到 .config"
     exit 1
 fi
-
-if [ ! -f package/luci-app-smartdns/Makefile ]; then
-    echo "❌ 未找到 luci-app-smartdns Makefile"
-    exit 1
-fi
-
-if [ ! -f feeds/packages/lang/golang/golang/Makefile ]; then
-    echo "❌ 未找到 Golang Makefile"
-    exit 1
-fi
-
-echo "✅ SmartDNS 核心、LuCI 和 Golang 检查通过"
 
 # ==================================================
 # 完成
 # ==================================================
+echo "========================================="
 echo "✅ OpenWrt 25.12 DIY2 执行完成"
+echo "========================================="
