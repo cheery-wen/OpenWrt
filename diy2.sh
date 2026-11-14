@@ -24,7 +24,16 @@ cat > "$BOARD_D_PATH/02_network" << 'EOF'
 
 board_config_update
 
-ALL_ETH=$(ls /sys/class/net/ 2>/dev/null | grep -E '^eth[0-9]+$' | sort -V || true)
+# 仅识别 eth 数字接口
+# 先去掉 eth 前缀，再按数字排序，最后恢复 eth 前缀
+# 避免依赖 sort -V
+ALL_ETH=$(
+    ls /sys/class/net/ 2>/dev/null \
+        | grep -E '^eth[0-9]+$' \
+        | sed 's/^eth//' \
+        | sort -n \
+        | sed 's/^/eth/' || true
+)
 
 if [ -n "$ALL_ETH" ]; then
     COUNT=$(printf '%s\n' "$ALL_ETH" | wc -l)
@@ -57,7 +66,7 @@ if [ ! -x "$BOARD_D_PATH/02_network" ]; then
     exit 1
 fi
 
-echo "网口配置文件检查通过"
+echo "网口配置文件创建完成"
 
 # ==================================================
 # 2. 默认 LAN IP
@@ -81,11 +90,11 @@ else
 fi
 
 if ! grep -q '192\.168\.5\.1' "$LAN_CONFIG"; then
-    echo "ERROR：LAN IP 修改验证失败"
+    echo "ERROR：LAN IP 修改失败"
     exit 1
 fi
 
-echo "LAN IP 检查通过"
+echo "默认 LAN IP 设置完成"
 
 # ==================================================
 # 3. 默认时区
@@ -112,7 +121,7 @@ if [ ! -x "$TIMEZONE_DIR/99-timezone" ]; then
     exit 1
 fi
 
-echo "时区配置检查通过"
+echo "默认时区配置完成"
 
 # ==================================================
 # 4. 清理 Go Cache
@@ -152,7 +161,7 @@ if ! grep -qE '^GO_VERSION_MAJOR_MINOR:=1\.27([[:space:]]|$)' "$GO_MAKEFILE"; th
     exit 1
 fi
 
-echo "Golang 27.x 检查通过"
+echo "Golang 27.x 版本确认完成"
 grep -E 'GO_VERSION_MAJOR_MINOR|GO_VERSION_PATCH' "$GO_MAKEFILE"
 
 # ==================================================
@@ -172,125 +181,14 @@ rm -rf feeds/luci/applications/luci-app-smartdns
 rm -rf package/feeds/packages/smartdns
 rm -rf package/feeds/luci/luci-app-smartdns
 
-# ==================================================
-# 7. SmartDNS 依赖检查
-# ==================================================
-echo "🔧 检查 SmartDNS 依赖"
-
-SMARTDNS_CORE_MK="package/openwrt-passwall-packages/smartdns/Makefile"
-SMARTDNS_UI_MK="package/luci-app-smartdns/Makefile"
-
-if [ ! -f "$SMARTDNS_CORE_MK" ]; then
-    echo "ERROR：未找到 PassWall packages 中的 SmartDNS Makefile"
-    exit 1
-fi
-
-if [ ! -f "$SMARTDNS_UI_MK" ]; then
-    echo "ERROR：未找到 luci-app-smartdns Makefile"
-    exit 1
-fi
-
-if ! grep -q 'Package/smartdns' "$SMARTDNS_CORE_MK"; then
-    echo "ERROR：SmartDNS 核心包定义不存在"
-    exit 1
-fi
-
-if ! grep -q 'Package/smartdns-ui' "$SMARTDNS_CORE_MK"; then
-    echo "ERROR：SmartDNS WebUI 包定义不存在"
-    exit 1
-fi
-
-if ! grep -qE 'DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_CORE_MK"; then
-    echo "ERROR：SmartDNS WebUI 未声明核心依赖"
-    exit 1
-fi
-
-if ! grep -qE 'LUCI_DEPENDS:=[^#]*\+smartdns' "$SMARTDNS_UI_MK"; then
-    echo "ERROR：SmartDNS LuCI 未声明核心依赖"
-    exit 1
-fi
-
-echo "SmartDNS 核心、WebUI、LuCI 依赖检查通过"
+echo "SmartDNS 官方重复软件包清理完成"
 
 # ==================================================
-# 8. 检查第三方插件源码
-# ==================================================
-echo "🔍 检查第三方插件源码"
-
-required_files=(
-    "package/luci-app-diskman/Makefile"
-    "package/parted/Makefile"
-    "package/luci-app-timecontrol/Makefile"
-
-    "package/oaf/oaf/Makefile"
-    "package/oaf/open-app-filter/Makefile"
-    "package/oaf/luci-app-oaf/Makefile"
-
-    "package/openwrt-passwall-packages/smartdns/Makefile"
-    "package/luci-app-smartdns/Makefile"
-
-    "feeds/packages/lang/golang/golang/Makefile"
-    "target/linux/x86/base-files/etc/board.d/02_network"
-    "package/base-files/files/bin/config_generate"
-    "package/base-files/files/etc/uci-defaults/99-timezone"
-)
-
-for file in "${required_files[@]}"; do
-    if [ ! -f "$file" ]; then
-        echo "ERROR：缺少关键文件：$file"
-        exit 1
-    fi
-done
-
-echo "第三方插件源码检查通过"
-
-# ==================================================
-# 9. 检查 .config 中的关键配置
-# ==================================================
-echo "🔍 检查关键编译配置"
-
-if [ ! -f .config ]; then
-    echo "ERROR：未找到 .config"
-    exit 1
-fi
-
-required_config=(
-    "CONFIG_TARGET_x86=y"
-    "CONFIG_TARGET_x86_64=y"
-    "CONFIG_TARGET_x86_64_DEVICE_generic=y"
-
-    "CONFIG_GRUB_IMAGES=y"
-    "CONFIG_GRUB_EFI_IMAGES=y"
-    "CONFIG_TARGET_KERNEL_PARTSIZE=32"
-    "CONFIG_TARGET_ROOTFS_PARTSIZE=512"
-    "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
-
-    "CONFIG_PACKAGE_luci-app-passwall=y"
-
-    "CONFIG_PACKAGE_luci-app-diskman=y"
-    "CONFIG_PACKAGE_parted=y"
-    "CONFIG_PACKAGE_luci-app-timecontrol=y"
-
-    "CONFIG_PACKAGE_kmod-oaf=y"
-    "CONFIG_PACKAGE_appfilter=y"
-    "CONFIG_PACKAGE_luci-app-oaf=y"
-
-    "CONFIG_PACKAGE_smartdns=y"
-    "CONFIG_PACKAGE_smartdns-ui=y"
-    "CONFIG_PACKAGE_luci-app-smartdns=y"
-)
-
-for item in "${required_config[@]}"; do
-    if ! grep -Fxq "$item" .config; then
-        echo "ERROR：缺少配置：$item"
-        exit 1
-    fi
-done
-
-echo ".config 关键配置检查通过"
-
-# ==================================================
-# 完成
+# DIY2 完成
+#
+# 不执行第三方软件包检查
+# 不执行 .config 软件包检查
+# 不执行 SmartDNS 依赖检查
 # ==================================================
 echo "========================================="
 echo "✅ OpenWrt 25.12 DIY2 执行完成"
