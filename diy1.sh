@@ -109,7 +109,10 @@ echo "PowerOffDevice 软件包安装完成"
 # ==================================================
 # 5. GHFU
 #
-# 上游仓库内层目录才是 OpenWrt package：
+# 使用上游新仓库：
+# smallprogram/openwrt-ghfu
+#
+# 上游软件包位于：
 # luci-app-ghfu/
 #
 # 复制内部软件包到标准 package 目录
@@ -117,7 +120,7 @@ echo "PowerOffDevice 软件包安装完成"
 GHFU_SRC="package/luci-app-ghfu-src"
 
 clone_latest \
-    https://github.com/smallprogram/luci-app-ghfu.git \
+    https://github.com/smallprogram/openwrt-ghfu.git \
     "$GHFU_SRC"
 
 mkdir -p package/luci-app-ghfu
@@ -205,6 +208,7 @@ clone_latest \
 
 # ==================================================
 # DIY1 完成
+# 不执行第三方软件包检查
 # ==================================================
 echo "========================================="
 echo "DIY1 Finished"
