@@ -73,7 +73,6 @@
 
 ### 系统管理与辅助功能
 
-- CPUFreq CPU 频率管理。
 - PowerOffDevice 设备关机管理。
 - TimeControl 网络时间控制。
 - OpenAppFilter 应用过滤。
