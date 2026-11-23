@@ -107,31 +107,31 @@ rm -rf "$POWEROFF_SRC"
 echo "PowerOffDevice 软件包安装完成"
 
 # ==================================================
-# 5. GHFU
+# 5. WrtPilot
 #
-# 使用上游新仓库：
-# smallprogram/openwrt-ghfu
+# 使用自己的 WrtPilot 仓库：
+# cheery-wen/WrtPilot
 #
 # 上游软件包位于：
-# luci-app-ghfu/
+# luci-app-wrtpilot/
 #
 # 复制内部软件包到标准 package 目录
 # ==================================================
-GHFU_SRC="package/luci-app-ghfu-src"
+WRTPILOT_SRC="package/luci-app-wrtpilot-src"
 
 clone_latest \
-    https://github.com/smallprogram/openwrt-ghfu.git \
-    "$GHFU_SRC"
+    https://github.com/cheery-wen/WrtPilot.git \
+    "$WRTPILOT_SRC"
 
-mkdir -p package/luci-app-ghfu
+mkdir -p package/luci-app-wrtpilot
 
 cp -a \
-    "$GHFU_SRC/luci-app-ghfu/." \
-    package/luci-app-ghfu/
+    "$WRTPILOT_SRC/luci-app-wrtpilot/." \
+    package/luci-app-wrtpilot/
 
-rm -rf "$GHFU_SRC"
+rm -rf "$WRTPILOT_SRC"
 
-echo "GHFU 软件包安装完成"
+echo "WrtPilot 软件包安装完成"
 
 # ==================================================
 # 6. OpenAppFilter (OAF)
