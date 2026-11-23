@@ -54,7 +54,31 @@
 - Lucky 内网穿透及网络服务管理。
 - SmartDNS DNS 分流与解析服务。
 - Cloudflare DDNS 相关支持。
-- GHFU。
+- WrtPilot 固件升级管理。
+
+### WrtPilot 固件升级管理
+
+WrtPilot 是本项目集成的自有 LuCI 固件升级管理插件。
+
+项目地址：[cheery-wen/WrtPilot](https://github.com/cheery-wen/WrtPilot)
+
+主要功能：
+
+- 获取 GitHub Releases 固件信息。
+- 显示系统与 Release 状态。
+- 获取并筛选 Release 固件资产。
+- 支持固件名称模糊搜索。
+- 支持手动下载固件及 SHA256 完整性校验。
+- 支持手动确认后执行系统升级。
+- 支持自动固件升级，默认关闭。
+- 自动升级时间由用户自行设置。
+- 自动升级依据上次确认升级的固件名称进行匹配。
+- 自动升级匹配及 SHA256 校验通过后执行升级。
+- 支持保留配置升级或不保留配置升级。
+- 支持配置备份。
+- 固件仓库为后台固定配置，不提供 LuCI 修改入口。
+
+自动升级涉及直接刷写系统固件。启用前请确认固件来源及适用性，并了解自动升级的风险。
 
 ### 存储与 NAS
 
@@ -189,6 +213,7 @@
 - Snapshot 模式使用 openwrt-25.12 分支最新源码。
 - 使用 OpenWrt 官方源码内置的 `feeds.conf.default`。
 - 第三方插件由 DIY 脚本集成。
+- WrtPilot 使用自有仓库 [cheery-wen/WrtPilot](https://github.com/cheery-wen/WrtPilot)。
 
 ## 注意事项
 
@@ -199,7 +224,8 @@
 5. Stable 模式固定 OpenWrt 源码版本，但第三方插件使用上游仓库代码，插件更新可能影响构建结果。
 6. OpenAppFilter 内核模块需要结合当前 OpenWrt 内核版本进行编译兼容性验证。
 7. 第三方插件是否最终进入固件，以实际编译结果及固件内容为准。
-8. 首次刷写前请备份原有系统配置及重要数据。
+8. WrtPilot 自动升级默认关闭。开启后，符合匹配及 SHA256 校验条件的固件将直接刷写，不会等待人工确认。
+9. 首次刷写前请备份原有系统配置及重要数据。
 
 ## 许可证
 
